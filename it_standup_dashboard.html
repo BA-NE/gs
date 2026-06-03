@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GS // IT Weekly Standup</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#080909;--s1:#0f1012;--s2:#161719;--s3:#1e2023;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);
+  --text:#e8e8e4;--muted:#6b6e78;--muted2:#3a3d45;
+  --green:#3ddc84;--green-d:rgba(61,220,132,0.10);
+  --red:#ff6b6b;--red-d:rgba(255,107,107,0.10);
+  --amber:#f5a623;--amber-d:rgba(245,166,35,0.10);
+  --blue:#4d9fff;--blue-d:rgba(77,159,255,0.10);
+  --teal:#2dd4bf;--teal-d:rgba(45,212,191,0.10);
+  --accent:#a78bfa;--accent-d:rgba(167,139,250,0.10);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;background:rgba(8,9,9,0.94);backdrop-filter:blur(16px);gap:12px;flex-wrap:wrap}
+.topbar-left{display:flex;align-items:center;gap:14px}
+.logo{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:.12em;font-weight:500}
+.week-pill{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);background:var(--s2);border:1px solid var(--border2);border-radius:20px;padding:3px 10px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.sync-row{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--muted2);flex-shrink:0;transition:background .3s}
+.sync-dot.live{background:var(--green);box-shadow:0 0 6px var(--green)}
+.sync-dot.err{background:var(--red)}
+.sync-dot.pulsing{background:var(--amber);animation:dp 1s ease-in-out infinite}
+@keyframes dp{0%,100%{opacity:1}50%{opacity:.25}}
+.rbtn{font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 12px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .12s;display:inline-block}
+.rbtn:hover{color:var(--accent);border-color:var(--accent)}
+.rbtn.spin{animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* UPLOAD ZONES */
+.upload-zones{display:flex;gap:8px;align-items:center}
+.upload-zone{
+  position:relative;display:flex;align-items:center;gap:7px;
+  padding:5px 12px;border-radius:6px;
+  border:1px dashed var(--border2);background:transparent;
+  color:var(--muted);cursor:pointer;transition:all .15s;
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+}
+.upload-zone:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-d)}
+.upload-zone.loaded{border-style:solid;border-color:var(--green);color:var(--green);background:var(--green-d)}
+.upload-zone.loaded:hover{border-color:var(--green);color:var(--green)}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-zone .uz-icon{font-size:11px;flex-shrink:0}
+.upload-zone .uz-name{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar-divider{width:1px;height:20px;background:var(--border2);flex-shrink:0}
+
+/* LAYOUT */
+.main{padding:24px 16px;max-width:100%;margin:0 auto}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px}
+@media(max-width:800px){.stats{grid-template-columns:repeat(3,1fr)}}
+.stat{background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:14px 18px;position:relative;overflow:hidden}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat.sg::before{background:var(--green)}.stat.sr::before{background:var(--red)}
+.stat.sa::before{background:var(--amber)}.stat.sp::before{background:var(--accent)}
+.stat.sb::before{background:var(--blue)}
+.stat-n{font-size:30px;font-weight:700;line-height:1;margin-bottom:3px}
+.sg .stat-n{color:var(--green)}.sr .stat-n{color:var(--red)}.sa .stat-n{color:var(--amber)}.sp .stat-n{color:var(--accent)}.sb .stat-n{color:var(--blue)}
+.stat-l{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+
+/* MAP */
+.card{background:var(--s1);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px}
+.card-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px}
+.card-title{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;display:flex;align-items:center;gap:8px}
+.ind{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.map-leg{display:flex;gap:14px}
+.leg{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted)}
+.leg-dot{width:7px;height:7px;border-radius:50%}
+#map-inner{position:relative;background:#0c0e10}
+#map-svg{width:100%;display:block}
+.mtt{position:absolute;pointer-events:none;background:var(--s3);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;opacity:0;transition:opacity .12s;z-index:10;min-width:160px;line-height:1.7}
+.mtt.show{opacity:1}
+.mtt-city{font-weight:500;margin-bottom:4px}
+.mtt-row{color:var(--muted);margin-top:2px}
+.mtt-g{color:var(--green)}.mtt-r{color:var(--red)}
+
+/* PANELS */
+.panels{display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:24px}
+@media(max-width:900px){.panels{grid-template-columns:1fr}}
+.panel{background:var(--s1);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.pill{font-family:'JetBrains Mono',monospace;font-size:9px;background:var(--s3);color:var(--muted);border-radius:4px;padding:2px 8px}
+
+/* FILTER BAR */
+.fbar{padding:8px 16px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap}
+.flt{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 9px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .1s}
+.flt:hover{color:var(--text)}.flt.on{background:var(--accent-d);border-color:var(--accent);color:var(--accent)}
+
+/* TABLE */
+.tbl-wrap{overflow-x:hidden;flex:1}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead tr{border-bottom:1px solid var(--border2)}
+thead th{padding:7px 10px;text-align:left;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:400;white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s}
+thead th:hover{color:var(--text)}
+thead th.sort-asc,thead th.sort-desc{color:var(--accent)}
+thead th.sort-asc::after{content:' ↑'}
+thead th.sort-desc::after{content:' ↓'}
+tbody tr{border-bottom:1px solid var(--border);transition:background .08s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--s2)}
+tbody td{padding:8px 10px;vertical-align:middle;white-space:nowrap}
+.td-name{font-weight:500;font-size:13px;max-width:170px;overflow:hidden;text-overflow:ellipsis}
+.td-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:1px}
+.tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;font-weight:500;white-space:nowrap}
+.tg{background:var(--green-d);color:var(--green)}.tr{background:var(--red-d);color:var(--red)}
+.ta{background:var(--amber-d);color:var(--amber)}.tb{background:var(--blue-d);color:var(--blue)}
+.tt{background:var(--teal-d);color:var(--teal)}.tz{background:rgba(255,255,255,0.04);color:var(--muted)}
+.tv{background:rgba(167,139,250,0.18);color:var(--accent);border:1px solid rgba(167,139,250,0.3)}
+.chip{font-family:'JetBrains Mono',monospace;font-size:9px;background:var(--s3);color:var(--muted);border-radius:4px;padding:2px 7px}
+.erow td{text-align:center;padding:32px;color:var(--muted2);font-family:'JetBrains Mono',monospace;font-size:11px}
+
+/* STOCK */
+.stock-body{padding:20px}
+.stock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:20px}
+.sc{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:14px}
+.sc-loc{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.br{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.bl{font-family:'JetBrains Mono',monospace;font-size:8px;width:20px;flex-shrink:0}
+.bl.mac{color:var(--blue)}.bl.pc{color:var(--accent)}
+.bt{flex:1;height:5px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden}
+.bf{height:100%;border-radius:3px;transition:width .5s ease}
+.bf.mac{background:var(--blue)}.bf.pc{background:var(--accent)}
+.bn{font-family:'JetBrains Mono',monospace;font-size:10px;min-width:18px;text-align:right}
+.bn.mac{color:var(--blue)}.bn.pc{color:var(--accent)}
+.sc-tot{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);margin-top:8px}
+.sc-tot strong{color:var(--text)}
+.sdiv{border:none;border-top:1px solid var(--border);margin:0 0 16px}
+.sub-ttl{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.needs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:8px}
+.nc{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;display:flex;align-items:center;justify-content:space-between}
+.nc-loc{font-size:12px;font-weight:500}
+.nchips{display:flex;gap:4px}
+.nchip{font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 6px;border-radius:3px;font-weight:500}
+.nchip.mac{background:var(--blue-d);color:var(--blue)}.nchip.pc{background:var(--accent-d);color:var(--accent)}.nchip.z{background:rgba(255,255,255,0.03);color:var(--muted2)}
+.slbl{font-family:'JetBrains Mono',monospace;font-size:9px;border-radius:4px;padding:2px 7px;font-weight:500}
+.slbl.live{background:var(--green-d);color:var(--green)}.slbl.snap{background:var(--amber-d);color:var(--amber)}
+.stock-load{padding:28px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="logo">GS // IT OPS</span>
+    <span class="week-pill" id="week-pill">—</span>
+  </div>
+  <div class="topbar-right">
+    <div class="upload-zones">
+      <label class="upload-zone" id="uz-lc" title="Upload Employee Lifecycle Tracker.xlsx">
+        <span class="uz-icon">⬆</span>
+        <span class="uz-name" id="uz-lc-name">lifecycle tracker</span>
+        <input type="file" id="file-lc" accept=".xlsx,.xls" onchange="handleLifecycleUpload(this)">
+      </label>
+      <label class="upload-zone" id="uz-inv" title="Upload GS Laptop Inventory.xlsx">
+        <span class="uz-icon">⬆</span>
+        <span class="uz-name" id="uz-inv-name">laptop inventory</span>
+        <input type="file" id="file-inv" accept=".xlsx,.xls" onchange="handleInventoryUpload(this)">
+      </label>
+    </div>
+    <div class="topbar-divider"></div>
+    <div class="sync-row">
+      <div class="sync-dot pulsing" id="sdot"></div>
+      <span id="slbl">awaiting files…</span>
+    </div>
+    <button class="rbtn" id="rbtn" onclick="refreshFromUploads()">↻ refresh</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="stats">
+    <div class="stat sg"><div class="stat-n" id="s-h">—</div><div class="stat-l">New Hires</div></div>
+    <div class="stat sr"><div class="stat-n" id="s-t">—</div><div class="stat-l">Terminations</div></div>
+    <div class="stat sa"><div class="stat-n" id="s-nr">—</div><div class="stat-l">Not Ready</div></div>
+    <div class="stat sp"><div class="stat-n" id="s-c">—</div><div class="stat-l">Confidential</div></div>
+    <div class="stat sb"><div class="stat-n" id="s-o">—</div><div class="stat-l">Offices</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">
+      <div class="card-title"><span class="ind" style="background:var(--teal);box-shadow:0 0 5px var(--teal)"></span>Headcount map</div>
+      <div class="map-leg">
+        <div class="leg"><div class="leg-dot" style="background:var(--green)"></div>hire</div>
+        <div class="leg"><div class="leg-dot" style="background:var(--red)"></div>term</div>
+        <div class="leg"><div class="leg-dot" style="background:var(--amber)"></div>both</div>
+      </div>
+    </div>
+    <div id="map-inner">
+      <svg id="map-svg" viewBox="0 0 1000 460"><rect width="1000" height="460" fill="#0c0e10"/><g id="mc"></g><g id="md"></g></svg>
+      <div class="mtt" id="mtt"><div class="mtt-city" id="mtt-c"></div><div class="mtt-row" id="mtt-h"></div><div class="mtt-row" id="mtt-t"></div></div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <div class="card-hd">
+        <div class="card-title"><span class="ind" style="background:var(--green);box-shadow:0 0 5px var(--green)"></span>New hires</div>
+        <span class="pill" id="hpill">—</span>
+      </div>
+      <div class="fbar" id="hfbar"></div>
+      <div class="tbl-wrap">
+        <table><thead><tr>
+          <th data-table="h" data-col="name">Name</th>
+          <th data-table="h" data-col="location">Location</th>
+          <th data-table="h" data-col="department">Dept</th>
+          <th data-table="h" data-col="date">Start date</th>
+          <th data-table="h" data-col="assignee">Assignee</th>
+          <th data-table="h" data-col="owner">Owner</th>
+          <th data-table="h" data-col="ready">Account</th>
+          <th data-table="h" data-col="laptop">Laptop</th>
+        </tr></thead>
+        <tbody id="htbody"><tr class="erow"><td colspan="8">Upload lifecycle tracker to load</td></tr></tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="card-hd">
+        <div class="card-title"><span class="ind" style="background:var(--red);box-shadow:0 0 5px var(--red)"></span>Terminations</div>
+        <span class="pill" id="tpill">—</span>
+      </div>
+      <div class="fbar" id="tfbar"></div>
+      <div class="tbl-wrap">
+        <table><thead><tr>
+          <th data-table="t" data-col="name">Name</th>
+          <th data-table="t" data-col="location">Location</th>
+          <th data-table="t" data-col="date">Term date</th>
+          <th data-table="t" data-col="owner">Owner</th>
+        </tr></thead>
+        <tbody id="ttbody"><tr class="erow"><td colspan="4">Upload lifecycle tracker to load</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">
+      <div class="card-title"><span class="ind" style="background:var(--blue);box-shadow:0 0 5px var(--blue)"></span>Laptop stock <span style="font-size:8px;color:var(--muted);margin-left:4px;font-weight:400">new in stock + on order</span></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="slbl snap" id="stk-badge">◌ snapshot</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)" id="stk-time">—</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2)" id="stk-cd"></span>
+      </div>
+    </div>
+    <div id="stk-body"><div class="stock-load">Fetching inventory…</div></div>
+  </div>
+
+</div>
+
+<script>
+// ── CONFIG
+const REFRESH_SEC=30;
+
+// ── CITY COORDS (lon, lat)
+const CITIES={
+  "sofia":         {lon:23.32,  lat:42.70,  label:"Sofia"},
+  "bulgaria":      {lon:25.49,  lat:42.73,  label:"Bulgaria"},
+  "new york":      {lon:-74.00, lat:40.71,  label:"New York"},
+  "newport beach": {lon:-117.93,lat:33.62,  label:"Newport Beach"},
+  "london":        {lon:-0.12,  lat:51.51,  label:"London"},
+  "netherlands":   {lon:4.90,   lat:52.37,  label:"Netherlands"},
+  "amsterdam":     {lon:4.90,   lat:52.37,  label:"Amsterdam"},
+  "melbourne":     {lon:144.96, lat:-37.81, label:"Melbourne"},
+  "australia":     {lon:133.78, lat:-25.27, label:"Australia"},
+  "canada":        {lon:-96.80, lat:56.13,  label:"Canada"},
+  "summit":        {lon:-74.36, lat:40.72,  label:"Summit, NJ"},
+  "singapore":     {lon:103.82, lat:1.35,   label:"Singapore"},
+  "sydney, au":    {lon:151.21, lat:-33.87, label:"Sydney"},
+  "new jersey":    {lon:-74.41, lat:40.06,  label:"New Jersey"},
+  "dubai":         {lon:55.30,  lat:25.20,  label:"Dubai"},
+  "toronto":       {lon:-79.38, lat:43.65,  label:"Toronto"},
+  "paris":         {lon:2.35,   lat:48.85,  label:"Paris"},
+  "hong kong":     {lon:114.17, lat:22.32,  label:"Hong Kong"},
+  "tokyo":         {lon:139.69, lat:35.69,  label:"Tokyo"},
+};
+const ck=s=>(s||"").toLowerCase().trim();
+
+// ── STATE
+let hires=[],terms=[],hireF="All",termF="All",mapProj=null,mapReady=false;
+let lcLoaded=false, invLoaded=false;
+
+// ── XLSX FILE READERS
+function readXlsxFile(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:"array"});
+        const sheets={};
+        wb.SheetNames.forEach(name=>{
+          sheets[name]=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:""});
+        });
+        resolve({sheetNames:wb.SheetNames,sheets});
+      }catch(err){reject(err);}
+    };
+    reader.onerror=()=>reject(new Error("File read failed"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function setUZLoaded(zoneId,nameId,filename){
+  document.getElementById(zoneId).classList.add("loaded");
+  const short=filename.length>18?filename.slice(0,16)+"…":filename;
+  document.getElementById(nameId).textContent="✓ "+short;
+}
+
+async function handleLifecycleUpload(input){
+  const file=input.files[0]; if(!file) return;
+  try{
+    const {sheetNames,sheets}=await readXlsxFile(file);
+    const hSheet=sheetNames.find(n=>/hire/i.test(n))||sheetNames[0];
+    const tSheet=sheetNames.find(n=>/term|exit|leav/i.test(n))||(sheetNames.length>1?sheetNames[1]:null);
+    hires=parseHires(sheets[hSheet]||[]);
+    terms=tSheet?parseTerms(sheets[tSheet]||[]):[];
+    lcLoaded=true;
+    setUZLoaded("uz-lc","uz-lc-name",file.name);
+    updateSyncStatus();
+    render();
+  }catch(e){console.error("Lifecycle upload error:",e);alert("Could not parse lifecycle file: "+e.message);}
+  input.value="";
+}
+
+async function handleInventoryUpload(input){
+  const file=input.files[0]; if(!file) return;
+  try{
+    const {sheetNames,sheets}=await readXlsxFile(file);
+    // Sheet 1 (index 0) has the stock data
+    const sheet=sheetNames[0];
+    const inv=parseInventory(sheets[sheet]||[]);
+    renderStock(inv.stockByLoc,inv.onOrderByLoc,true);
+    invLoaded=true;
+    setUZLoaded("uz-inv","uz-inv-name",file.name);
+    updateSyncStatus();
+  }catch(e){console.error("Inventory upload error:",e);alert("Could not parse inventory file: "+e.message);}
+  input.value="";
+}
+
+function updateSyncStatus(){
+  const dot=document.getElementById("sdot"),lbl=document.getElementById("slbl");
+  const now=new Date().toLocaleTimeString();
+  if(lcLoaded&&invLoaded){dot.className="sync-dot live";lbl.textContent="loaded · "+now;}
+  else if(lcLoaded){dot.className="sync-dot pulsing";lbl.textContent="lifecycle loaded · awaiting inventory";}
+  else if(invLoaded){dot.className="sync-dot pulsing";lbl.textContent="inventory loaded · awaiting lifecycle";}
+  else{dot.className="sync-dot err";lbl.textContent="awaiting files…";}
+  document.getElementById("week-pill").textContent="w/o "+new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+}
+
+function refreshFromUploads(){
+  const btn=document.getElementById("rbtn");
+  btn.classList.add("spin");
+  render();
+  if(invLoaded) document.getElementById("stk-time").textContent=new Date().toLocaleTimeString();
+  setTimeout(()=>btn.classList.remove("spin"),400);
+}
+
+// ── PARSE HIRES
+// Schema: Name | Confidentiality | Location | Start Date | Assignee | Owner | Account Status | Laptop
+function parseHires(rows){
+  let hi=-1;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i].map(c=>String(c).toLowerCase().trim());
+    if(r.includes("name")&&(r.includes("location")||r.includes("start date"))){hi=i;break;}
+  }
+  if(hi===-1) return [];
+  const H=rows[hi].map(c=>String(c).toLowerCase().trim());
+  const ci=k=>H.findIndex(h=>h.includes(k));
+  const iN=ci("name"),iCf=ci("confidential"),iL=ci("location");
+  const iDept=ci("department");
+  const iD=ci("start")>-1?ci("start"):ci("date");
+  const iA=ci("assignee"),iO=ci("owner"),iAc=ci("account"),iLp=ci("laptop"),iVip=ci("vip");
+  return rows.slice(hi+1).map(r=>{
+    const name=String(r[iN]||"").trim(); if(!name) return null;
+    const confRaw=String(r[iCf]||"").trim();
+    return{
+      name,
+      conf:     /^confidential$/i.test(confRaw),
+      confLabel:confRaw||"Non-Confidential",
+      location: iL>-1    ?String(r[iL]||"").trim():"",
+      department:iDept>-1?String(r[iDept]||"").trim():"",
+      date:     iD>-1    ?String(r[iD]||"").trim():"",
+      assignee: iA>-1    ?String(r[iA]||"").trim():"",
+      owner:    iO>-1    ?String(r[iO]||"").trim():"",
+      ready:    iAc>-1   ?/yes/i.test(String(r[iAc]||"")):false,
+      laptop:   iLp>-1   ?String(r[iLp]||"").trim():"",
+      vip:      iVip>-1  ?/yes/i.test(String(r[iVip]||"")):false,
+    };
+  }).filter(Boolean);
+}
+
+// ── PARSE TERMS
+// Schema: Name | Confidentiality | Location | Term Date | Owner
+function parseTerms(rows){
+  let hi=-1;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i].map(c=>String(c).toLowerCase().trim());
+    if(r.includes("name")&&(r.includes("location")||r.includes("term date")||r.includes("owner"))){hi=i;break;}
+  }
+  if(hi===-1) return [];
+  const H=rows[hi].map(c=>String(c).toLowerCase().trim());
+  const ci=k=>H.findIndex(h=>h.includes(k));
+  const iN=ci("name"),iCf=ci("confidential"),iL=ci("location");
+  const iD=ci("term")>-1?ci("term"):ci("date");
+  const iO=ci("owner");
+  return rows.slice(hi+1).map(r=>{
+    const name=String(r[iN]||"").trim(); if(!name) return null;
+    const confRaw=String(r[iCf]||"").trim();
+    return{
+      name,
+      conf:     /^confidential$/i.test(confRaw),
+      confLabel:confRaw||"Non-Confidential",
+      location: iL>-1 ?String(r[iL]||"").trim():"",
+      date:     iD>-1 ?String(r[iD]||"").trim():"",
+      owner:    iO>-1 ?String(r[iO]||"").trim():"",
+    };
+  }).filter(Boolean);
+}
+
+// ── PARSE INVENTORY (sheet 1: New Windows + New Mac in stock, Windows on Order + Macs on Order)
+function parseInventory(rows){
+  let stockByLoc=[],onOrderByLoc=[];
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i].map(c=>String(c).toLowerCase().trim());
+    const nwi=row.findIndex(c=>c==="new windows in stock"||c==="new windows");
+    const nmi=row.findIndex(c=>c==="new mac in stock"||c==="new mac");
+    const woi=row.findIndex(c=>c==="windows on order");
+    const moi=row.findIndex(c=>c==="macs on order");
+    if(nwi>-1&&nmi>-1){
+      for(let j=i+1;j<rows.length;j++){
+        const loc=String(rows[j][0]||"").trim();
+        if(!loc||/total|grand|headcount|hire/i.test(loc)) break;
+        stockByLoc.push({loc,pc:parseInt(rows[j][nwi])||0,mac:parseInt(rows[j][nmi])||0});
+        if(woi>-1&&moi>-1){
+          onOrderByLoc.push({loc,pc:parseInt(rows[j][woi])||0,mac:parseInt(rows[j][moi])||0});
+        }
+      }
+      break;
+    }
+  }
+  return{stockByLoc,onOrderByLoc};
+}
+
+// ── SORT STATE
+let hSort={col:null,dir:1}, tSort={col:null,dir:1};
+
+function sortData(arr,col,dir){
+  if(!col) return arr;
+  return [...arr].sort((a,b)=>{
+    let av=a[col],bv=b[col];
+    // booleans: true sorts before false ascending
+    if(typeof av==="boolean") av=av?0:1;
+    if(typeof bv==="boolean") bv=bv?0:1;
+    av=String(av||"").toLowerCase();
+    bv=String(bv||"").toLowerCase();
+    return av<bv?-dir:av>bv?dir:0;
+  });
+}
+
+function updateSortHeaders(tableSelector,sortState){
+  document.querySelectorAll(`th[data-table="${tableSelector}"]`).forEach(th=>{
+    th.classList.remove("sort-asc","sort-desc");
+    if(th.dataset.col===sortState.col)
+      th.classList.add(sortState.dir===1?"sort-asc":"sort-desc");
+  });
+}
+
+// ── HEADER CLICK HANDLER (set up once after DOM ready)
+document.addEventListener("click",e=>{
+  const th=e.target.closest("th[data-col]"); if(!th) return;
+  const tbl=th.dataset.table, col=th.dataset.col;
+  if(tbl==="h"){
+    hSort.dir = hSort.col===col ? -hSort.dir : 1;
+    hSort.col=col;
+    renderHires();
+  } else if(tbl==="t"){
+    tSort.dir = tSort.col===col ? -tSort.dir : 1;
+    tSort.col=col;
+    renderTerms();
+  }
+});
+
+// ── RENDER MAIN
+function render(){
+  const notReady=hires.filter(h=>!h.ready).length;
+  const conf=[...hires.filter(h=>h.conf),...terms.filter(t=>t.conf)].length;
+  const offices=new Set([...hires.map(h=>h.location),...terms.map(t=>t.location)].filter(Boolean)).size;
+  animN("s-h",hires.length);animN("s-t",terms.length);animN("s-nr",notReady);animN("s-c",conf);animN("s-o",offices);
+  const hLocs=[...new Set(hires.map(h=>h.location).filter(Boolean))];
+  const tLocs=[...new Set(terms.map(t=>t.location).filter(Boolean))];
+  buildFbar("hfbar",hLocs,hireF,v=>{hireF=v;renderHires();});
+  buildFbar("tfbar",tLocs,termF,v=>{termF=v;renderTerms();});
+  renderHires();renderTerms();renderMapDots();
+}
+
+function renderHires(){
+  let f=hireF==="All"?hires:hires.filter(h=>h.location===hireF);
+  f=sortData(f,hSort.col,hSort.dir);
+  updateSortHeaders("h",hSort);
+  document.getElementById("hpill").textContent=f.length+" total";
+  const tb=document.getElementById("htbody");
+  if(!f.length){tb.innerHTML=`<tr class="erow"><td colspan="8">No records</td></tr>`;return;}
+  tb.innerHTML=f.map(h=>`<tr>
+    <td><div class="td-name">${h.name}${h.vip?` <span class="tag tv" style="font-size:8px;padding:1px 5px">VIP</span>`:""}${h.conf?` <span class="tag ta" style="font-size:8px;padding:1px 5px">CONF</span>`:""}</div></td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${h.location||"—"}</td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${h.department||"—"}</td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${h.date||"—"}</td>
+    <td><span class="chip">${h.assignee||"—"}</span></td>
+    <td><span class="chip">${h.owner||"—"}</span></td>
+    <td><span class="tag ${h.ready?"tg":"tr"}">${h.ready?"ready":"not ready"}</span></td>
+    <td><span class="tag ${/mac/i.test(h.laptop)?"tb":"tt"}">${h.laptop||"—"}</span></td>
+  </tr>`).join("");
+}
+
+function renderTerms(){
+  let f=termF==="All"?terms:terms.filter(t=>t.location===termF);
+  f=sortData(f,tSort.col,tSort.dir);
+  updateSortHeaders("t",tSort);
+  document.getElementById("tpill").textContent=f.length+" total";
+  const tb=document.getElementById("ttbody");
+  if(!f.length){tb.innerHTML=`<tr class="erow"><td colspan="4">No records</td></tr>`;return;}
+  tb.innerHTML=f.map(t=>`<tr>
+    <td><div class="td-name">${t.name}${t.conf?` <span class="tag ta" style="font-size:8px;padding:1px 5px">CONF</span>`:""}</div></td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${t.location||"—"}</td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${t.date||"—"}</td>
+    <td><span class="chip">${t.owner||"—"}</span></td>
+  </tr>`).join("");
+}
+
+function buildFbar(id,locs,active,cb){
+  const c=document.getElementById(id);c.innerHTML="";
+  ["All",...locs].forEach(loc=>{const b=document.createElement("button");b.className="flt"+(loc===active?" on":"");b.textContent=loc;b.onclick=()=>cb(loc);c.appendChild(b);});
+}
+
+function animN(id,val){
+  const el=document.getElementById(id);if(!el)return;
+  const prev=parseInt(el.textContent)||0;let s=null;
+  const run=ts=>{if(!s)s=ts;const p=Math.min((ts-s)/350,1);el.textContent=Math.round(prev+(val-prev)*p);if(p<1)requestAnimationFrame(run);};
+  requestAnimationFrame(run);
+}
+
+// ── RENDER STOCK
+function renderStock(stockByLoc,onOrderByLoc,isLive){
+  const el=document.getElementById("stk-body");
+  document.getElementById("stk-badge").className="slbl "+(isLive?"live":"snap");
+  document.getElementById("stk-badge").textContent=isLive?"● live":"◌ snapshot";
+  document.getElementById("stk-time").textContent=new Date().toLocaleTimeString();
+  if(!stockByLoc.length) stockByLoc=[
+    {loc:"Summit",       pc:2, mac:0},{loc:"New York",     pc:0, mac:0},
+    {loc:"London",       pc:13,mac:0},{loc:"Sofia",        pc:2, mac:5},
+    {loc:"Newport Beach",pc:10,mac:2},{loc:"Netherlands",  pc:0, mac:0},
+    {loc:"Australia",    pc:1, mac:0},{loc:"Canada",       pc:0, mac:0},
+  ];
+  if(!onOrderByLoc.length) onOrderByLoc=[
+    {loc:"Summit",       pc:0, mac:0},{loc:"New York",     pc:0, mac:0},
+    {loc:"London",       pc:14,mac:11},{loc:"Sofia",       pc:0, mac:5},
+    {loc:"Newport Beach",pc:0, mac:0},{loc:"Netherlands",  pc:0, mac:0},
+    {loc:"Australia",    pc:0, mac:0},{loc:"Canada",       pc:0, mac:0},
+  ];
+
+  const sc=stockByLoc.map(s=>{const tot=s.pc+s.mac||1;return`<div class="sc"><div class="sc-loc">${s.loc}</div>
+    <div class="br"><span class="bl mac">MAC</span><div class="bt"><div class="bf mac" style="width:${Math.round(s.mac/tot*100)}%"></div></div><span class="bn mac">${s.mac}</span></div>
+    <div class="br"><span class="bl pc">PC</span><div class="bt"><div class="bf pc" style="width:${Math.round(s.pc/tot*100)}%"></div></div><span class="bn pc">${s.pc}</span></div>
+    <div class="sc-tot">total <strong>${s.mac+s.pc}</strong></div></div>`;}).join("");
+
+  // On order — only show locations with at least one unit on order
+  const orderedLocs=onOrderByLoc.filter(o=>o.pc+o.mac>0);
+  const oc=orderedLocs.length?orderedLocs.map(o=>`
+    <div class="nc">
+      <span class="nc-loc">${o.loc}</span>
+      <div class="nchips">
+        <span class="nchip ${o.mac>0?"mac":"z"}">Mac ×${o.mac}</span>
+        <span class="nchip ${o.pc>0?"pc":"z"}">PC ×${o.pc}</span>
+      </div>
+    </div>`).join("")
+    :`<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2)">No units currently on order</span>`;
+
+  el.innerHTML=`<div class="stock-body">
+    <div class="sub-ttl">new stock in hand by office</div>
+    <div class="stock-grid">${sc}</div>
+    <hr class="sdiv">
+    <div class="sub-ttl">on order · awaiting delivery</div>
+    <div class="needs-grid">${oc}</div>
+  </div>`;
+}
+
+// ── MAP
+async function initMap(){
+  const W=1000,H=460,proj=d3.geoNaturalEarth1().scale(153).translate([W/2,H/2]);
+  mapProj=proj;const path=d3.geoPath().projection(proj);
+  let world;
+  try{const r=await fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json");world=await r.json();}catch(e){return;}
+  const countries=topojson.feature(world,world.objects.countries);
+  const g=document.getElementById("mc");
+  const gp=document.createElementNS("http://www.w3.org/2000/svg","path");
+  gp.setAttribute("d",path(d3.geoGraticule()()));gp.setAttribute("fill","none");gp.setAttribute("stroke","rgba(255,255,255,0.03)");gp.setAttribute("stroke-width","0.5");g.appendChild(gp);
+  countries.features.forEach(f=>{const p=document.createElementNS("http://www.w3.org/2000/svg","path");p.setAttribute("d",path(f));p.setAttribute("fill","#181b20");p.setAttribute("stroke","#252830");p.setAttribute("stroke-width","0.4");g.appendChild(p);});
+  const bp=document.createElementNS("http://www.w3.org/2000/svg","path");bp.setAttribute("d",path(topojson.mesh(world,world.objects.countries,(a,b)=>a!==b)));bp.setAttribute("fill","none");bp.setAttribute("stroke","#252830");bp.setAttribute("stroke-width","0.3");g.appendChild(bp);
+  mapReady=true;renderMapDots();
+}
+
+function renderMapDots(){
+  if(!mapReady||!mapProj) return;
+  const dg=document.getElementById("md");dg.innerHTML="";
+  const cd={};
+  hires.forEach(h=>{const k=ck(h.location);if(!cd[k])cd[k]={label:h.location,h:0,t:0};cd[k].h++;});
+  terms.forEach(t=>{const k=ck(t.location);if(!cd[k])cd[k]={label:t.location,h:0,t:0};cd[k].t++;});
+  const tt=document.getElementById("mtt");
+  Object.entries(cd).forEach(([key,data])=>{
+    const city=CITIES[key];if(!city)return;
+    const[px,py]=mapProj([city.lon,city.lat]);if(!px||!py)return;
+    const total=data.h+data.t,r=Math.max(7,5+total*2.5);
+    const color=data.h>0&&data.t>0?"#f5a623":data.t>0?"#ff6b6b":"#3ddc84";
+    const g=document.createElementNS("http://www.w3.org/2000/svg","g");g.style.cursor="pointer";
+    const pulse=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    pulse.setAttribute("cx",px);pulse.setAttribute("cy",py);pulse.setAttribute("r",r+3);pulse.setAttribute("fill","none");pulse.setAttribute("stroke",color);pulse.setAttribute("stroke-width","1.5");pulse.setAttribute("opacity","0.3");
+    pulse.innerHTML=`<animate attributeName="r" values="${r+2};${r+12};${r+2}" dur="2.5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.35;0;0.35" dur="2.5s" repeatCount="indefinite"/>`;
+    const c=document.createElementNS("http://www.w3.org/2000/svg","circle");c.setAttribute("cx",px);c.setAttribute("cy",py);c.setAttribute("r",r);c.setAttribute("fill",color);c.setAttribute("opacity","0.9");
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");t.setAttribute("x",px);t.setAttribute("y",py+4);t.setAttribute("text-anchor","middle");t.setAttribute("font-size","10");t.setAttribute("font-family","JetBrains Mono,monospace");t.setAttribute("font-weight","600");t.setAttribute("fill","#080909");t.textContent=total;
+    const lbl=document.createElementNS("http://www.w3.org/2000/svg","text");lbl.setAttribute("x",px);lbl.setAttribute("y",py+r+12);lbl.setAttribute("text-anchor","middle");lbl.setAttribute("font-size","8");lbl.setAttribute("font-family","JetBrains Mono,monospace");lbl.setAttribute("fill","#4a4d55");lbl.textContent=city.label;
+    g.appendChild(pulse);g.appendChild(c);g.appendChild(t);g.appendChild(lbl);dg.appendChild(g);
+
+    // Build names lists for tooltip
+    const hireNames=hires.filter(h=>ck(h.location)===key).map(h=>h.name);
+    const termNames=terms.filter(t=>ck(t.location)===key).map(t=>t.name);
+
+    const showTT=()=>{
+      const mr=document.getElementById("map-inner").getBoundingClientRect(),sr=document.getElementById("map-svg").getBoundingClientRect();
+      const ex=px*(sr.width/1000)+sr.left-mr.left,ey=py*(sr.height/460)+sr.top-mr.top;
+      document.getElementById("mtt-c").textContent=city.label;
+      document.getElementById("mtt-h").innerHTML=hireNames.length
+        ?`<span class="mtt-g">▲ Hires</span><br>${hireNames.map(n=>`<span style="color:var(--text);font-size:10px">${n}</span>`).join("<br>")}`:
+        "";
+      document.getElementById("mtt-t").innerHTML=termNames.length
+        ?`<span class="mtt-r" style="margin-top:6px;display:block">▼ Terminations</span>${termNames.map(n=>`<span style="color:var(--text);font-size:10px">${n}</span>`).join("<br>")}`:
+        "";
+      // Position — flip left if too close to right edge
+      const ttWidth=180;
+      const left=ex+ttWidth>mr.width ? ex-ttWidth-8 : ex+14;
+      tt.style.left=left+"px";tt.style.top=(ey-20)+"px";tt.classList.add("show");
+    };
+
+    g.addEventListener("mouseenter",showTT);
+    g.addEventListener("mouseleave",()=>tt.classList.remove("show"));
+  });
+}
+
+// ── SAMPLE FALLBACK
+const SAMPLE_HIRES=[
+  {name:"Aditya Anne",     conf:false,confLabel:"Non-Confidential",location:"London",       department:"Research",        date:"19th May 26",  assignee:"Ryan M.", owner:"Omar",   ready:true, laptop:"PC", vip:true},
+  {name:"Justin Briones",  conf:true, confLabel:"Confidential",    location:"Newport Beach",department:"People",          date:"20th May 26",  assignee:"Tyler",   owner:"Tyler",  ready:false,laptop:"PC", vip:false},
+  {name:"Kiril Yakimov",   conf:false,confLabel:"Non-Confidential",location:"Sofia",        department:"Web",             date:"1st June 26",  assignee:"Reco",    owner:"Damyan", ready:false,laptop:"Mac",vip:false},
+  {name:"Conor Hanzlik",   conf:false,confLabel:"Non-Confidential",location:"Newport Beach",department:"Data Engineering",date:"26th May 26",  assignee:"Tyler",   owner:"Tyler",  ready:true, laptop:"PC", vip:false},
+  {name:"Maylin Alonso",   conf:false,confLabel:"Non-Confidential",location:"Newport Beach",department:"Product",         date:"1st June 26",  assignee:"Tyler",   owner:"Tyler",  ready:false,laptop:"PC", vip:false},
+  {name:"Chris Clark",     conf:false,confLabel:"Non-Confidential",location:"Newport Beach",department:"Product",         date:"26th May 26",  assignee:"Ryan M.", owner:"Tyler",  ready:false,laptop:"PC", vip:false},
+];
+const SAMPLE_TERMS=[
+  {name:"Alice Penn",        conf:true, confLabel:"Confidential",    location:"London",        date:"6th June 26",  owner:"Saiyed"},
+  {name:"Kiril Motiv",       conf:false,confLabel:"Non-Confidential",location:"Sofia",         date:"12th June 26", owner:"Damyan"},
+  {name:"Stanislava Krat",   conf:false,confLabel:"Non-Confidential",location:"Sofia",         date:"5th June 26",  owner:"Saiyed"},
+  {name:"Mitchel Briggs",    conf:false,confLabel:"Non-Confidential",location:"London",        date:"29th May 26",  owner:"Ryan M."},
+  {name:"Jamie Monachino",   conf:false,confLabel:"Non-Confidential",location:"Summit",        date:"22nd May 26",  owner:"Tyler"},
+  {name:"Justin Colins",     conf:false,confLabel:"Non-Confidential",location:"New Port Beach",date:"11th May 26",  owner:"Tyler"},
+];
+
+// ── AUTO-REFRESH COUNTDOWN (re-parses already-loaded data every 30s)
+let cd=REFRESH_SEC;
+setInterval(()=>{
+  cd--;
+  const el=document.getElementById("stk-cd");
+  if(el&&(lcLoaded||invLoaded)) el.textContent=`· refreshed ${REFRESH_SEC-cd}s ago`;
+  if(cd<=0){cd=REFRESH_SEC;if(lcLoaded||invLoaded) refreshFromUploads();}
+},1000);
+
+// ── INIT
+initMap();
+// Show sample data on load so the dashboard isn't blank
+hires=SAMPLE_HIRES; terms=SAMPLE_TERMS;
+render();
+renderStock([],[],false);
+updateSyncStatus();
+</script>
+</body>
+</html>
