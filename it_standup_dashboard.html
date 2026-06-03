@@ -274,7 +274,8 @@ const msalConfig = {
   auth: {
     clientId: "df19db02-a02e-4ac3-93fb-165821c76fcf",
     authority: "https://login.microsoftonline.com/0b70a129-42b3-4c57-98b7-efdbfb2593c5",
-    redirectUri: "https://ba-ne.github.io/gs/it_standup_dashboard.html",
+    redirectUri: "https://ba-ne.github.io/gs/auth.html",
+    knownAuthorities: ["login.microsoftonline.com"],
   },
   cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
 };
@@ -285,7 +286,6 @@ async function initMsal() {
     const errEl = document.getElementById("auth-err");
     errEl.textContent = "Failed to load Microsoft auth library. Check your internet connection and refresh.";
     errEl.style.display = "block";
-    console.error("msal library not loaded");
     return;
   }
   try {
