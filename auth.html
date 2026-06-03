@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Authenticating...</title></head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script>
+const msalInstance = new msal.PublicClientApplication({
+  auth: {
+    clientId: "df19db02-a02e-4ac3-93fb-165821c76fcf",
+    authority: "https://login.microsoftonline.com/0b70a129-42b3-4c57-98b7-efdbfb2593c5",
+    redirectUri: "https://ba-ne.github.io/gs/auth.html",
+    knownAuthorities: ["login.microsoftonline.com"],
+  },
+  cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
+});
+
+msalInstance.initialize().then(() => {
+  msalInstance.handleRedirectPromise().then(res => {
+    if (window.opener) window.close();
+  }).catch(e => {
+    console.error("Auth popup error:", e);
+    if (window.opener) window.close();
+  });
+});
+</script>
+</body>
+</html>
