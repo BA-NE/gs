@@ -348,8 +348,8 @@ const REFRESH_SEC = 30;
 // CITY COORDS
 // ═══════════════════════════════════════════
 const CITIES = {
-  "us remote":     {lon:-98.58,  lat:39.83,  label:"US Remote"},
-  "uk remote":     {lon:-0.12,   lat:51.51,  label:"London"},
+  "remote us":     {lon:-98.58,  lat:39.83,  label:"US Remote"},
+  "remote uk":     {lon:-0.12,   lat:51.51,  label:"London"},
   "bulgaria":      {lon:25.49,  lat:42.73,  label:"Bulgaria"},
   "new york":      {lon:-74.00, lat:40.71,  label:"New York"},
   "newport beach": {lon:-117.93,lat:33.62,  label:"Newport Beach"},
@@ -369,7 +369,12 @@ const CITIES = {
   "hong kong":     {lon:114.17, lat:22.32,  label:"Hong Kong"},
   "tokyo":         {lon:139.69, lat:35.69,  label:"Tokyo"},
 };
-const ck = s => (s||"").toLowerCase().trim();
+const ck = s => {
+  const k = (s||"").toLowerCase().trim();
+  if (k.includes("us") && k.includes("remote")) return "remote us";
+  if (k.includes("uk") && k.includes("remote")) return "remote uk";
+  return k;
+};
 
 // ═══════════════════════════════════════════
 // STATE
