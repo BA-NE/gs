@@ -151,6 +151,9 @@ tbody td{padding:8px 10px;vertical-align:middle;white-space:nowrap}
       <svg width="16" height="16" viewBox="0 0 21 21" fill="none"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
       Sign in with Microsoft
     </button>
+    <div style="margin-top:12px">
+      <button onclick="clearMsalCache()" style="background:none;border:none;font-size:11px;color:var(--muted);cursor:pointer;text-decoration:underline;font-family:'Inter',sans-serif">Having trouble? Clear auth cache and retry</button>
+    </div>
     <div class="auth-err" id="auth-err">Sign-in failed. Please try again.</div>
   </div>
 </div>
@@ -366,6 +369,16 @@ function toggleTheme(){
 // ═══════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════
+function clearMsalCache() {
+  // Remove all MSAL keys from localStorage and sessionStorage
+  [localStorage, sessionStorage].forEach(store => {
+    Object.keys(store).filter(k => k.startsWith("msal.")).forEach(k => store.removeItem(k));
+  });
+  document.getElementById("auth-err").style.display = "none";
+  document.getElementById("auth-err").textContent = "";
+  window.location.reload();
+}
+
 async function signIn() {
   document.getElementById("auth-err").style.display = "none";
   if (!msalInstance) {
