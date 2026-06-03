@@ -49,10 +49,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 .sync-dot.err{background:var(--red)}
 .sync-dot.pulsing{background:var(--amber);animation:dp 1s ease-in-out infinite}
 @keyframes dp{0%,100%{opacity:1}50%{opacity:.25}}
-.rbtn{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:5px 12px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .12s;display:inline-block}
+.rbtn{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:5px 12px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .12s;display:inline-block;text-transform:uppercase;letter-spacing:.06em}
 .rbtn:hover{color:var(--accent);border-color:var(--accent)}
-.rbtn.spin{animation:sp .8s linear infinite}
-@keyframes sp{to{transform:rotate(360deg)}}
+.rbtn.spin{animation:sp 1.2s ease-in-out infinite}
+@keyframes sp{0%,100%{opacity:1}50%{opacity:.3}}
 .theme-btn{font-size:16px;background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:6px;line-height:1;transition:transform .15s;color:var(--text)}
 .theme-btn:hover{transform:scale(1.2)}
 .user-chip{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--muted);background:var(--s2);border:1px solid var(--border2);border-radius:20px;padding:3px 10px}
@@ -174,7 +174,7 @@ tbody td{padding:8px 10px;vertical-align:middle;white-space:nowrap}
       <div class="sync-dot pulsing" id="sdot"></div>
       <span id="slbl">connecting…</span>
     </div>
-    <button class="rbtn" id="rbtn" onclick="refreshAll()">↻ refresh</button>
+    <button class="rbtn" id="rbtn" onclick="refreshAll()">Refresh</button>
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
   </div>
 </div>
@@ -256,12 +256,14 @@ tbody td{padding:8px 10px;vertical-align:middle;white-space:nowrap}
       <table>
         <thead><tr>
           <th data-table="s" data-col="loc">Location</th>
-          <th data-table="s" data-col="mac">New Mac</th>
-          <th data-table="s" data-col="pc">New PC</th>
-          <th data-table="s" data-col="macOrder">Mac on order</th>
+          <th data-table="s" data-col="newPc">New PC</th>
+          <th data-table="s" data-col="usedPc">Used PC</th>
+          <th data-table="s" data-col="newMac">New Mac</th>
+          <th data-table="s" data-col="usedMac">Used Mac</th>
           <th data-table="s" data-col="pcOrder">PC on order</th>
+          <th data-table="s" data-col="macOrder">Mac on order</th>
         </tr></thead>
-        <tbody id="stk-tbody"><tr class="erow"><td colspan="5">Signing in…</td></tr></tbody>
+        <tbody id="stk-tbody"><tr class="erow"><td colspan="7">Signing in…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -370,12 +372,9 @@ function toggleTheme(){
 // AUTH
 // ═══════════════════════════════════════════
 function clearMsalCache() {
-  // Remove all MSAL keys from localStorage and sessionStorage
   [localStorage, sessionStorage].forEach(store => {
     Object.keys(store).filter(k => k.startsWith("msal.")).forEach(k => store.removeItem(k));
   });
-  document.getElementById("auth-err").style.display = "none";
-  document.getElementById("auth-err").textContent = "";
   window.location.reload();
 }
 
@@ -386,17 +385,29 @@ async function signIn() {
     document.getElementById("auth-err").style.display = "block";
     return;
   }
-  try {
-    const res = await msalInstance.loginPopup({ scopes: SCOPES });
-    showUser(res.account);
-    document.getElementById("auth-overlay").classList.remove("show");
-    refreshAll();
-  } catch(e) {
-    console.error("Sign-in error:", e.message, e);
-    const errEl = document.getElementById("auth-err");
-    errEl.textContent = e.message || "Sign-in failed. Please try again.";
-    errEl.style.display = "block";
-  }
+
+  // Open auth.html as a plain popup — it handles the full redirect flow
+  const w = 500, h = 600;
+  const left = window.screenX + (window.outerWidth - w) / 2;
+  const top = window.screenY + (window.outerHeight - h) / 2;
+  window.open("https://ba-ne.github.io/gs/auth.html", "msalPopup", `width=${w},height=${h},left=${left},top=${top}`);
+
+  // Listen for the auth complete message from auth.html
+  window.addEventListener("message", async function onMessage(e) {
+    if (e.origin !== "https://ba-ne.github.io") return;
+    if (e.data?.type !== "msal_auth_complete") return;
+    window.removeEventListener("message", onMessage);
+    // Re-check accounts after auth.html completed sign-in
+    const account = msalInstance.getAllAccounts()[0];
+    if (account) {
+      showUser(account);
+      document.getElementById("auth-overlay").classList.remove("show");
+      refreshAll();
+    } else {
+      document.getElementById("auth-err").textContent = "Sign-in completed but account not found. Please refresh and try again.";
+      document.getElementById("auth-err").style.display = "block";
+    }
+  });
 }
 
 function showUser(account) {
@@ -510,16 +521,29 @@ function parseInventory(rows) {
   for (let i=0; i<rows.length; i++) {
     const row = rows[i].map(c=>String(c).toLowerCase().trim());
     const nwi = row.findIndex(c=>c==="new windows in stock"||c==="new windows");
+    const uwi = row.findIndex(c=>c==="used windows in stock"||c==="used windows");
     const nmi = row.findIndex(c=>c==="new mac in stock"||c==="new mac");
+    const umi = row.findIndex(c=>c==="used mac in stock"||c==="used mac");
     const woi = row.findIndex(c=>c==="windows on order");
     const moi = row.findIndex(c=>c==="macs on order");
     if (nwi>-1 && nmi>-1) {
       for (let j=i+1; j<rows.length; j++) {
         const loc = String(rows[j][0]||"").trim();
         if (!loc || /total|grand|headcount|hire/i.test(loc)) break;
-        stockByLoc.push({loc, pc:parseInt(rows[j][nwi])||0, mac:parseInt(rows[j][nmi])||0});
-        if (woi>-1 && moi>-1)
-          onOrderByLoc.push({loc, pc:parseInt(rows[j][woi])||0, mac:parseInt(rows[j][moi])||0});
+        stockByLoc.push({
+          loc,
+          newPc:   parseInt(rows[j][nwi])||0,
+          usedPc:  uwi>-1 ? parseInt(rows[j][uwi])||0 : 0,
+          newMac:  parseInt(rows[j][nmi])||0,
+          usedMac: umi>-1 ? parseInt(rows[j][umi])||0 : 0,
+        });
+        if (woi>-1 && moi>-1) {
+          onOrderByLoc.push({
+            loc,
+            pc:  parseInt(rows[j][woi])||0,
+            mac: parseInt(rows[j][moi])||0,
+          });
+        }
       }
       break;
     }
@@ -644,13 +668,13 @@ function renderTerms() {
 function renderStockTable() {
   const tb = document.getElementById("stk-tbody"); if (!tb) return;
   if (!stockData.length && !orderData.length) {
-    tb.innerHTML=`<tr class="erow"><td colspan="5">Loading inventory…</td></tr>`; return;
+    tb.innerHTML=`<tr class="erow"><td colspan="7">Loading inventory…</td></tr>`; return;
   }
   const locs = new Set([...stockData.map(s=>s.loc),...orderData.map(o=>o.loc)]);
   let rows = [...locs].map(loc => {
-    const s=stockData.find(x=>x.loc===loc)||{mac:0,pc:0};
-    const o=orderData.find(x=>x.loc===loc)||{mac:0,pc:0};
-    return {loc, mac:s.mac, pc:s.pc, macOrder:o.mac, pcOrder:o.pc};
+    const s = stockData.find(x=>x.loc===loc) || {newPc:0,usedPc:0,newMac:0,usedMac:0};
+    const o = orderData.find(x=>x.loc===loc) || {pc:0,mac:0};
+    return { loc, newPc:s.newPc, usedPc:s.usedPc, newMac:s.newMac, usedMac:s.usedMac, pcOrder:o.pc, macOrder:o.mac };
   });
   if (sSort.col) rows = rows.slice().sort((a,b) => {
     const av=a[sSort.col], bv=b[sSort.col];
@@ -660,10 +684,12 @@ function renderStockTable() {
   updateSortHeaders("s", sSort);
   tb.innerHTML = rows.map(r=>`<tr>
     <td style="font-weight:700">${r.loc}</td>
-    <td style="font-weight:700;color:var(--blue)">${r.mac}</td>
-    <td style="font-weight:700;color:var(--teal)">${r.pc}</td>
-    <td style="font-weight:700;color:${r.macOrder>0?"var(--blue)":"var(--muted2)"}">${r.macOrder}</td>
+    <td style="font-weight:700;color:var(--teal)">${r.newPc}</td>
+    <td style="font-weight:700;color:${r.usedPc>0?"var(--teal)":"var(--muted2)"}">${r.usedPc}</td>
+    <td style="font-weight:700;color:var(--blue)">${r.newMac}</td>
+    <td style="font-weight:700;color:${r.usedMac>0?"var(--blue)":"var(--muted2)"}">${r.usedMac}</td>
     <td style="font-weight:700;color:${r.pcOrder>0?"var(--teal)":"var(--muted2)"}">${r.pcOrder}</td>
+    <td style="font-weight:700;color:${r.macOrder>0?"var(--blue)":"var(--muted2)"}">${r.macOrder}</td>
   </tr>`).join("");
 }
 
