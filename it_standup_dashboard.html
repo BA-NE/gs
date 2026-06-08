@@ -298,7 +298,7 @@ const msalConfig = {
   auth: {
     clientId: "df19db02-a02e-4ac3-93fb-165821c76fcf",
     authority: "https://login.microsoftonline.com/0b70a129-42b3-4c57-98b7-efdbfb2593c5",
-    redirectUri: "https://ba-ne.github.io/gs/auth.html",
+    redirectUri: "https://ba-ne.github.io/gs/it_standup_dashboard.html",
     knownAuthorities: ["login.microsoftonline.com"],
   },
   cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
@@ -307,14 +307,22 @@ let msalInstance;
 
 async function initMsal() {
   if (typeof msal === "undefined") {
-    const errEl = document.getElementById("auth-err");
-    errEl.textContent = "Failed to load Microsoft auth library. Check your internet connection and refresh.";
-    errEl.style.display = "block";
+    document.getElementById("auth-err").textContent = "Failed to load Microsoft auth library. Check your internet connection and refresh.";
+    document.getElementById("auth-err").style.display = "block";
     return;
   }
   try {
     msalInstance = new msal.PublicClientApplication(msalConfig);
     await msalInstance.initialize();
+
+    // Handle redirect response if returning from Microsoft login
+    const res = await msalInstance.handleRedirectPromise();
+    if (res && res.account) {
+      showUser(res.account);
+      document.getElementById("auth-overlay").classList.remove("show");
+      refreshAll();
+      return;
+    }
 
     // Check for existing cached session
     const account = msalInstance.getAllAccounts()[0];
@@ -325,9 +333,8 @@ async function initMsal() {
     }
   } catch(e) {
     console.error("MSAL init error:", e.message, e);
-    const errEl = document.getElementById("auth-err");
-    errEl.textContent = "Auth error: " + (e.message || "Unknown error");
-    errEl.style.display = "block";
+    document.getElementById("auth-err").textContent = "Auth error: " + (e.message || "Unknown error");
+    document.getElementById("auth-err").style.display = "block";
   }
 }
 
@@ -410,29 +417,13 @@ async function signIn() {
     document.getElementById("auth-err").style.display = "block";
     return;
   }
-
-  // Open auth.html as a plain popup — it handles the full redirect flow
-  const w = 520, h = 680;
-  const left = window.screenX + (window.outerWidth - w) / 2;
-  const top = window.screenY + (window.outerHeight - h) / 2;
-  window.open("https://ba-ne.github.io/gs/auth.html", "msalAuthPopup", `width=${w},height=${h},left=${left},top=${top},scrollbars=yes`);
-
-  // Listen for the auth complete message from auth.html
-  window.addEventListener("message", async function onMessage(e) {
-    if (e.origin !== "https://ba-ne.github.io") return;
-    if (e.data?.type !== "msal_auth_complete") return;
-    window.removeEventListener("message", onMessage);
-    // Re-check accounts after auth.html completed sign-in
-    const account = msalInstance.getAllAccounts()[0];
-    if (account) {
-      showUser(account);
-      document.getElementById("auth-overlay").classList.remove("show");
-      refreshAll();
-    } else {
-      document.getElementById("auth-err").textContent = "Sign-in completed but account not found. Please refresh and try again.";
-      document.getElementById("auth-err").style.display = "block";
-    }
-  });
+  try {
+    await msalInstance.loginRedirect({ scopes: SCOPES });
+  } catch(e) {
+    console.error("Sign-in error:", e.message, e);
+    document.getElementById("auth-err").textContent = e.message || "Sign-in failed. Please try again.";
+    document.getElementById("auth-err").style.display = "block";
+  }
 }
 
 function showUser(account) {
@@ -452,9 +443,8 @@ async function getToken() {
     const res = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account });
     return res.accessToken;
   } catch(e) {
-    console.warn("Silent token failed, using popup:", e);
-    const res = await msalInstance.acquireTokenPopup({ scopes: SCOPES });
-    return res.accessToken;
+    console.warn("Silent token failed, redirecting:", e);
+    await msalInstance.acquireTokenRedirect({ scopes: SCOPES });
   }
 }
 
