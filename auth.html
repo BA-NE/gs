@@ -1,10 +1,18 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Authenticating...</title></head>
+<head><meta charset="UTF-8"><title>Signing in...</title>
+<style>
+  body{font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5;color:#111;font-size:13px;flex-direction:column;gap:12px}
+  .spinner{width:20px;height:20px;border:2px solid #ddd;border-top-color:#6d4fd4;border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
 <body>
+<div class="spinner"></div>
+<p id="msg">Signing in with Microsoft...</p>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <script>
-const msalInstance = new msal.PublicClientApplication({
+const cfg = {
   auth: {
     clientId: "df19db02-a02e-4ac3-93fb-165821c76fcf",
     authority: "https://login.microsoftonline.com/0b70a129-42b3-4c57-98b7-efdbfb2593c5",
@@ -12,16 +20,56 @@ const msalInstance = new msal.PublicClientApplication({
     knownAuthorities: ["login.microsoftonline.com"],
   },
   cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
-});
+};
 
-msalInstance.initialize().then(() => {
-  msalInstance.handleRedirectPromise().then(res => {
-    if (window.opener) window.close();
-  }).catch(e => {
-    console.error("Auth popup error:", e);
-    if (window.opener) window.close();
-  });
-});
+async function run() {
+  try {
+    const instance = new msal.PublicClientApplication(cfg);
+    await instance.initialize();
+
+    // Check if returning from a redirect (Microsoft sent us back with a code)
+    const res = await instance.handleRedirectPromise();
+
+    if (res && res.account) {
+      // Auth complete — notify parent and close
+      document.getElementById("msg").textContent = "Signed in! Closing...";
+      if (window.opener) {
+        window.opener.postMessage(
+          { type: "msal_auth_complete", account: res.account },
+          "https://ba-ne.github.io"
+        );
+      }
+      window.close();
+      return;
+    }
+
+    // Check for already-cached account
+    const accounts = instance.getAllAccounts();
+    if (accounts.length > 0) {
+      if (window.opener) {
+        window.opener.postMessage(
+          { type: "msal_auth_complete", account: accounts[0] },
+          "https://ba-ne.github.io"
+        );
+      }
+      window.close();
+      return;
+    }
+
+    // No account and no redirect response — initiate login redirect
+    // This navigates this popup window to Microsoft login
+    document.getElementById("msg").textContent = "Redirecting to Microsoft...";
+    await instance.loginRedirect({
+      scopes: ["https://graph.microsoft.com/Sites.Read.All"]
+    });
+
+  } catch(e) {
+    document.getElementById("msg").textContent = "Error: " + e.message;
+    console.error("auth.html error:", e);
+  }
+}
+
+run();
 </script>
 </body>
 </html>
