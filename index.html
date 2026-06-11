@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Usage Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeede9;
+  --text: #1a1a18; --text2: #5f5e5a; --text3: #888780;
+  --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+  --purple: #534AB7; --purple-light: #EEEDFE; --purple-dark: #3C3489;
+  --teal: #1D9E75; --teal-light: #E1F5EE; --teal-dark: #085041;
+  --coral: #D85A30; --coral-light: #FAECE7; --coral-dark: #4A1B0C;
+  --amber: #BA7517; --amber-light: #FAEEDA; --amber-dark: #412402;
+  --blue: #185FA5; --blue-light: #E6F1FB; --blue-dark: #042C53;
+  --green-text: #3B6D11; --red-text: #A32D2D;
+  --radius: 8px; --radius-lg: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1a; --bg2: #252521; --bg3: #2e2e2a;
+    --text: #e8e6df; --text2: #a8a69f; --text3: #6e6c66;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.15);
+    --purple-light: #2a2660; --purple-dark: #CECBF6;
+    --teal-light: #0a2e22; --teal-dark: #9FE1CB;
+    --coral-light: #3a1a10; --coral-dark: #F5C4B3;
+    --amber-light: #3a2408; --amber-dark: #FAC775;
+    --blue-light: #0a1e36; --blue-dark: #B5D4F4;
+    --green-text: #9FE1CB; --red-text: #F5A8A8;
+  }
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+/* ── Layout ── */
+.app { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+.top-bar h1 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.top-bar h1 .logo { width: 22px; height: 22px; background: var(--purple); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: white; font-weight: 700; flex-shrink: 0; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+select, input[type=text] { font-size: 13px; border: 1px solid var(--border2); border-radius: var(--radius); padding: 7px 10px; background: var(--bg); color: var(--text); cursor: pointer; }
+select:focus, input:focus { outline: none; border-color: var(--purple); }
+
+/* ── Tabs ── */
+.tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 24px; gap: 0; overflow-x: auto; }
+.tab { font-size: 13px; padding: 10px 16px; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; white-space: nowrap; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--purple); border-bottom-color: var(--purple); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Cards & metrics ── */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.metric { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.metric-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); margin-bottom: 6px; font-weight: 600; }
+.metric-value { font-size: 22px; font-weight: 600; }
+.metric-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+.up { color: var(--green-text); } .down { color: var(--red-text); }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 16px; }
+.card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); margin-bottom: 14px; font-weight: 600; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media(max-width:600px) { .two-col { grid-template-columns: 1fr; } }
+.chart-wrap { position: relative; width: 100%; }
+
+/* ── Tables ── */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap; }
+td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--bg2); }
+
+/* ── Badges ── */
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+.badge-purple { background: var(--purple-light); color: var(--purple-dark); }
+.badge-teal   { background: var(--teal-light);   color: var(--teal-dark); }
+.badge-amber  { background: var(--amber-light);  color: var(--amber-dark); }
+.badge-coral  { background: var(--coral-light);  color: var(--coral-dark); }
+.badge-blue   { background: var(--blue-light);   color: var(--blue-dark); }
+.badge-pending  { background: var(--amber-light);  color: var(--amber-dark); }
+.badge-approved { background: var(--teal-light);   color: var(--teal-dark); }
+.badge-denied   { background: var(--coral-light);  color: var(--coral-dark); }
+
+/* ── Misc UI ── */
+.avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; }
+.search-input { padding: 8px 12px; border: 1px solid var(--border2); border-radius: var(--radius); font-size: 13px; background: var(--bg); color: var(--text); width: 220px; }
+.search-input:focus { outline: none; border-color: var(--purple); }
+.back-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--purple); cursor: pointer; margin-bottom: 18px; font-weight: 500; }
+.back-btn:hover { opacity: 0.8; }
+.stat-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.stat-row:last-child { border-bottom: none; }
+.stat-label { color: var(--text2); }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text2); margin-bottom: 12px; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-sq { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.mini-bar-wrap { display: flex; height: 7px; border-radius: 4px; overflow: hidden; gap: 1px; min-width: 60px; }
+.progress-wrap { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+
+/* ── Loading / error states ── */
+.state-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 12px; color: var(--text2); }
+.spinner { width: 28px; height: 28px; border: 2.5px solid var(--border2); border-top-color: var(--purple); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-box { background: var(--coral-light); color: var(--coral-dark); border: 1px solid var(--coral); border-radius: var(--radius); padding: 12px 16px; font-size: 13px; margin-bottom: 16px; }
+
+/* ── Spend limit gauge ── */
+.gauge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.gauge-label { font-size: 12px; color: var(--text); min-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gauge-track { flex: 1; height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.gauge-fill { height: 100%; border-radius: 4px; }
+.gauge-val { font-size: 11px; color: var(--text2); min-width: 80px; text-align: right; }
+
+/* ── Config panel ── */
+.config-panel { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 24px; }
+.config-panel h2 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.config-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.config-row label { font-size: 13px; color: var(--text2); min-width: 110px; }
+.config-row input { flex: 1; min-width: 260px; font-size: 13px; border: 1px solid var(--border2); border-radius: var(--radius); padding: 7px 10px; background: var(--bg); color: var(--text); font-family: monospace; }
+.btn { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: var(--radius); border: none; cursor: pointer; }
+.btn-primary { background: var(--purple); color: white; }
+.btn-primary:hover { opacity: 0.88; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Top bar ── -->
+  <div class="top-bar">
+    <h1><span class="logo">C</span> Claude usage</h1>
+    <div class="controls">
+      <select id="range-sel" onchange="onDateChange()">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="showConfig()">⚙ Configure</button>
+      <button class="btn btn-primary btn-sm" onclick="refreshAll()" id="refresh-btn">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- ── Config panel (shown until proxy URL is set) ── -->
+  <div class="config-panel" id="config-panel">
+    <h2>Connect to your proxy</h2>
+    <div class="config-row">
+      <label>Proxy URL</label>
+      <input type="text" id="proxy-url" placeholder="http://localhost:3000" value="http://localhost:3000" />
+    </div>
+    <div class="config-row" style="margin-top:6px;">
+      <label></label>
+      <button class="btn btn-primary" onclick="saveConfig()">Save &amp; load data</button>
+      <span id="config-status" style="font-size:12px;color:var(--text2);margin-left:8px;"></span>
+    </div>
+    <p style="font-size:12px;color:var(--text3);margin-top:10px;">
+      Start the proxy: <code style="background:var(--bg2);padding:1px 5px;border-radius:3px;">ANTHROPIC_KEY=sk-ant-... node server.js</code>
+    </p>
+  </div>
+
+  <!-- ── Tabs ── -->
+  <div class="tab-bar">
+    <div class="tab active" data-tab="overview"   onclick="switchTab('overview')">Overview</div>
+    <div class="tab"        data-tab="users"       onclick="switchTab('users')">Per-user</div>
+    <div class="tab"        data-tab="depts"       onclick="switchTab('depts')">Departments</div>
+    <div class="tab"        data-tab="activity"    onclick="switchTab('activity')">Activity feed</div>
+    <div class="tab"        data-tab="spending"    onclick="switchTab('spending')">Spend limits</div>
+    <div class="tab"        data-tab="requests"    onclick="switchTab('requests')">Limit requests</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       OVERVIEW
+  ═══════════════════════════════════════════════════════ -->
+  <div id="tab-overview" class="panel active">
+    <div id="overview-metrics" class="metrics"></div>
+    <div class="card">
+      <div class="card-title">Daily active users</div>
+      <div class="chart-wrap" style="height:200px;"><canvas id="dauChart"></canvas></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Seat utilisation</div>
+        <div id="seat-info" style="font-size:13px;color:var(--text2);">—</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Top projects (today − 3 days)</div>
+        <div id="top-projects">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       PER-USER
+  ═══════════════════════════════════════════════════════ -->
+  <div id="tab-users" class="panel">
+    <div id="user-list-view">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <input class="search-input" id="user-search" placeholder="Search by name or email…" oninput="filterUsers()" />
+        <select id="user-sort" onchange="renderUserTable()">
+          <option value="cost">Sort by cost</option>
+          <option value="messages">Sort by messages</option>
+          <option value="name">Sort by name</option>
+        </select>
+      </div>
+      <div id="user-table-wrap"></div>
+    </div>
+    <div id="user-detail-view" style="display:none;">
+      <div class="back-btn" onclick="showUserList()">← Back to all users</div>
+      <div id="user-detail-content"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       DEPARTMENTS
+  ═══════════════════════════════════════════════════════ -->
+  <div id="tab-depts" class="panel">
+    <div id="dept-metrics" class="metrics"></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Spend by #dept- group</div>
+        <div id="dept-bars"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Members per department</div>
+        <div class="chart-wrap" style="height:260px;"><canvas id="deptChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table>
+        <thead><tr>
+          <th style="padding-left:20px;">Group</th>
+          <th>Members</th>
+          <th>Total cost (period)</th>
+          <th>Messages</th>
+          <th>Conversations</th>
+          <th>Claude Code sessions</th>
+        </tr></thead>
+        <tbody id="dept-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       ACTIVITY FEED
+  ═══════════════════════════════════════════════════════ -->
+  <div id="tab-activity" class="panel">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+      <select id="activity-type-sel" style="min-width:200px;">
+        <option value="">All activity types</option>
+        <option value="claude_chat_created">Chat created</option>
+        <option value="claude_chat_message_created">Message sent</option>
+        <option value="claude_file_uploaded">File uploaded</option>
+        <option value="member_login">Login</option>
+        <option value="member_added">Member added</option>
+        <option value="member_removed">Member removed</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="loadActivity()">Load</button>
+      <span id="activity-count" style="font-size:12px;color:var(--text3);"></span>
+    </div>
+    <div id="activity-wrap"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       SPEND LIMITS
+  ═══════════════════════════════════════════════════════ -->
+  <div id="tab-spending" class="panel">
+    <div id="spending-metrics" class="metrics"></div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+      <input class="search-input" id="spend-search" placeholder="Search members…" oninput="filterSpend()" />
+    </div>
+    <div id="spending-wrap"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       LIMIT REQUESTS
+  ═══════════════════════════════════════════════════════ -->
+  <div id="tab-requests" class="panel">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+      <select id="req-status-sel" onchange="loadLimitRequests()">
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="denied">Denied</option>
+        <option value="">All</option>
+      </select>
+    </div>
+    <div id="requests-wrap"></div>
+  </div>
+
+</div><!-- /.app -->
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════════════════════════
+let PROXY = localStorage.getItem("proxy_url") || "http://localhost:3000";
+document.getElementById("proxy-url").value = PROXY;
+
+function saveConfig() {
+  PROXY = document.getElementById("proxy-url").value.replace(/\/$/, "");
+  localStorage.setItem("proxy_url", PROXY);
+  document.getElementById("config-status").textContent = "Saved — loading data…";
+  document.getElementById("config-panel").style.display = "none";
+  refreshAll();
+}
+
+function showConfig() {
+  const p = document.getElementById("config-panel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════════════════
+let allUsers = [];        // from analytics/users (latest date)
+let allCosts = [];        // from user_cost_report
+let allSpend = [];        // from spend_limits/effective
+let deptGroups = [];      // from compliance/groups
+let deptMemberMap = {};   // groupId → Set of userIds
+let currentTab = "overview";
+let charts = {};
+
+const PALETTE = ["#534AB7","#1D9E75","#D85A30","#BA7517","#185FA5","#D4537E"];
+const AV_COLORS = ["#534AB7","#1D9E75","#D85A30","#185FA5","#BA7517","#D4537E"];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DATES
+// ══════════════════════════════════════════════════════════════════════════════
+function getDays() { return parseInt(document.getElementById("range-sel").value); }
+
+// API dates must be at least 3 days old for analytics endpoints
+function analyticsDate(daysBack = 3) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString().slice(0, 10);
+}
+
+function isoDate(daysBack = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString().replace(".000Z", "Z");
+}
+
+function dateRange() {
+  const n = getDays();
+  return {
+    starting_at: isoDate(n + 3),
+    ending_at: isoDate(3),
+    starting_date: analyticsDate(n + 3),
+    ending_date: analyticsDate(3),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FETCH HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
+async function apiFetch(path, params = {}) {
+  const url = new URL(PROXY + path);
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) v.forEach(x => url.searchParams.append(k + "[]", x));
+    else url.searchParams.set(k, v);
+  }
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status} on ${path}`);
+  }
+  return res.json();
+}
+
+// Auto-paginate through cursor-based endpoints
+async function fetchAll(path, params = {}, dataKey = "data") {
+  let all = [], page = null;
+  do {
+    const p = page ? { ...params, page } : params;
+    const res = await apiFetch(path, p);
+    all = all.concat(res[dataKey] || []);
+    page = res.next_page || null;
+  } while (page);
+  return all;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LOADING UI
+// ══════════════════════════════════════════════════════════════════════════════
+function loading(containerId, msg = "Loading…") {
+  document.getElementById(containerId).innerHTML =
+    `<div class="state-wrap"><div class="spinner"></div><span>${msg}</span></div>`;
+}
+
+function showError(containerId, msg) {
+  document.getElementById(containerId).innerHTML =
+    `<div class="error-box">⚠ ${msg}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REFRESH
+// ══════════════════════════════════════════════════════════════════════════════
+async function refreshAll() {
+  document.getElementById("refresh-btn").textContent = "↻ Loading…";
+  try {
+    await Promise.allSettled([
+      loadOverview(),
+      loadUsersData(),
+      loadDeptData(),
+      loadSpendLimits(),
+    ]);
+  } finally {
+    document.getElementById("refresh-btn").textContent = "↻ Refresh";
+  }
+  renderCurrentTab();
+}
+
+function onDateChange() { refreshAll(); }
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  document.getElementById("tab-" + tab).classList.add("active");
+  renderCurrentTab();
+}
+
+function renderCurrentTab() {
+  if (currentTab === "overview")  renderOverview();
+  if (currentTab === "users")     renderUserTable();
+  if (currentTab === "depts")     renderDepts();
+  if (currentTab === "spending")  renderSpendTable();
+  if (currentTab === "activity")  loadActivity();
+  if (currentTab === "requests")  loadLimitRequests();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OVERVIEW
+// ══════════════════════════════════════════════════════════════════════════════
+let summaryData = [];
+
+async function loadOverview() {
+  const dr = dateRange();
+  try {
+    const res = await apiFetch("/api/analytics/summaries", {
+      starting_date: dr.starting_date,
+      ending_date: dr.ending_date,
+    });
+    summaryData = res.data || [];
+  } catch (e) {
+    summaryData = [];
+    console.warn("summaries:", e.message);
+  }
+
+  // Also load top projects
+  try {
+    const projRes = await apiFetch("/api/analytics/projects", {
+      date: analyticsDate(3),
+      limit: 5,
+    });
+    renderTopProjects(projRes.data || []);
+  } catch (e) {
+    document.getElementById("top-projects").textContent = "Unavailable: " + e.message;
+  }
+}
+
+function renderOverview() {
+  if (!summaryData.length) {
+    document.getElementById("overview-metrics").innerHTML =
+      `<div class="metric"><div class="metric-label">Status</div><div class="metric-value" style="font-size:14px;">No data — check proxy &amp; date range</div></div>`;
+    return;
+  }
+  const latest = summaryData[summaryData.length - 1];
+  const totalSeats = latest.assigned_seat_count || 0;
+  const pendingInvites = latest.pending_invite_count || 0;
+  const dau = latest.daily_active_user_count || 0;
+  const wau = latest.weekly_active_user_count || 0;
+  const mau = latest.monthly_active_user_count || 0;
+
+  document.getElementById("overview-metrics").innerHTML = `
+    <div class="metric"><div class="metric-label">Seats assigned</div><div class="metric-value">${totalSeats}</div><div class="metric-sub">${pendingInvites} pending invites</div></div>
+    <div class="metric"><div class="metric-label">DAU (latest day)</div><div class="metric-value">${dau}</div><div class="metric-sub">${totalSeats ? Math.round(dau/totalSeats*100)+'% of seats' : ''}</div></div>
+    <div class="metric"><div class="metric-label">WAU</div><div class="metric-value">${wau}</div></div>
+    <div class="metric"><div class="metric-label">MAU</div><div class="metric-value">${mau}</div></div>
+    <div class="metric"><div class="metric-label">Cowork DAU</div><div class="metric-value">${latest.cowork_daily_active_user_count || 0}</div></div>
+  `;
+
+  // Seat info card
+  const seatPct = totalSeats ? Math.round(dau / totalSeats * 100) : 0;
+  document.getElementById("seat-info").innerHTML = `
+    <div style="margin-bottom:10px;font-size:22px;font-weight:600;">${dau} / ${totalSeats}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">daily active users of assigned seats</div>
+    <div class="progress-wrap"><div class="progress-fill" style="width:${seatPct}%;background:var(--purple);"></div></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:5px;">${seatPct}% seat utilisation</div>
+  `;
+
+  // DAU trend chart
+  destroyChart("dau");
+  const labels = summaryData.map(d => d.starting_date?.slice(5) || "");
+  const dauArr = summaryData.map(d => d.daily_active_user_count || 0);
+  charts.dau = new Chart(document.getElementById("dauChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "DAU", data: dauArr,
+        borderColor: "#534AB7", backgroundColor: "rgba(83,74,183,0.08)",
+        tension: 0.3, fill: true, pointRadius: 3, pointBackgroundColor: "#534AB7",
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 } }, grid: { color: "rgba(128,128,128,0.08)" }, beginAtZero: true },
+      }
+    }
+  });
+}
+
+function renderTopProjects(projects) {
+  if (!projects.length) { document.getElementById("top-projects").textContent = "No project data."; return; }
+  document.getElementById("top-projects").innerHTML =
+    `<table>
+      <thead><tr><th>Project</th><th>Users</th><th>Convos</th></tr></thead>
+      <tbody>${projects.slice(0, 5).map(p => `
+        <tr><td style="font-weight:500;">${p.project_name || "Unnamed"}</td>
+            <td>${p.distinct_user_count || 0}</td>
+            <td>${p.distinct_conversation_count || 0}</td></tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USERS
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadUsersData() {
+  const dr = dateRange();
+  try {
+    // Per-user activity for most-recent available day
+    allUsers = await fetchAll("/api/analytics/users", { date: analyticsDate(3), limit: 1000 });
+  } catch (e) { allUsers = []; console.warn("users:", e.message); }
+
+  try {
+    allCosts = await fetchAll("/api/analytics/user_cost_report", {
+      starting_at: dr.starting_at, ending_at: dr.ending_at,
+      order_by: "amount", limit: 1000,
+    });
+  } catch (e) { allCosts = []; console.warn("costs:", e.message); }
+}
+
+let filteredUsers = [];
+
+function filterUsers() {
+  const q = document.getElementById("user-search").value.toLowerCase();
+  filteredUsers = allUsers.filter(u =>
+    (u.user?.email_address || "").toLowerCase().includes(q)
+  );
+  renderUserTable();
+}
+
+function renderUserTable() {
+  if (!allUsers.length) {
+    document.getElementById("user-table-wrap").innerHTML =
+      `<div class="state-wrap"><span>No user data loaded. Check proxy connection.</span></div>`;
+    return;
+  }
+
+  if (!filteredUsers.length && !document.getElementById("user-search").value) {
+    filteredUsers = [...allUsers];
+  }
+
+  const sortBy = document.getElementById("user-sort").value;
+  const costMap = {};
+  allCosts.forEach(c => { costMap[c.user_id || c.user?.id] = parseFloat(c.amount || 0) / 100; });
+
+  const sorted = [...filteredUsers].sort((a, b) => {
+    if (sortBy === "cost") return (costMap[b.user?.id] || 0) - (costMap[a.user?.id] || 0);
+    if (sortBy === "messages") return (b.chat_metrics?.message_count || 0) - (a.chat_metrics?.message_count || 0);
+    return (a.user?.email_address || "").localeCompare(b.user?.email_address || "");
+  });
+
+  document.getElementById("user-table-wrap").innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table>
+        <thead><tr>
+          <th>User</th>
+          <th>Messages</th>
+          <th>Conversations</th>
+          <th>Code sessions</th>
+          <th>Cost (period)</th>
+          <th>Web searches</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${sorted.map((u, i) => {
+          const email = u.user?.email_address || "unknown";
+          const initials = email.slice(0, 2).toUpperCase();
+          const cost = costMap[u.user?.id];
+          const costStr = cost != null ? "$" + cost.toFixed(2) : "—";
+          return `<tr class="clickable" onclick="showUserDetail('${u.user?.id}')">
+            <td><div style="display:flex;align-items:center;gap:8px;">
+              <div class="avatar" style="background:${AV_COLORS[i % 6]};">${initials}</div>
+              <span style="font-size:12px;">${email}</span>
+            </div></td>
+            <td>${u.chat_metrics?.message_count || 0}</td>
+            <td>${u.chat_metrics?.distinct_conversation_count || 0}</td>
+            <td>${u.claude_code_metrics?.core_metrics?.distinct_session_count || 0}</td>
+            <td><strong>${costStr}</strong></td>
+            <td>${u.web_search_count || 0}</td>
+            <td style="color:var(--text3);">›</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+function showUserList() {
+  document.getElementById("user-list-view").style.display = "block";
+  document.getElementById("user-detail-view").style.display = "none";
+}
+
+function showUserDetail(userId) {
+  const u = allUsers.find(x => x.user?.id === userId);
+  if (!u) return;
+  const costRec = allCosts.find(c => (c.user_id || c.user?.id) === userId);
+  const cost = costRec ? (parseFloat(costRec.amount || 0) / 100).toFixed(2) : null;
+  const spendRec = allSpend.find(s => s.scope?.user_id === userId);
+
+  document.getElementById("user-list-view").style.display = "none";
+  document.getElementById("user-detail-view").style.display = "block";
+
+  const cc = u.claude_code_metrics?.core_metrics || {};
+  const cm = u.chat_metrics || {};
+  const cowork = u.cowork_metrics || {};
+
+  document.getElementById("user-detail-content").innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <div class="avatar" style="width:44px;height:44px;font-size:15px;background:var(--purple);">${(u.user?.email_address||"?").slice(0,2).toUpperCase()}</div>
+      <div>
+        <div style="font-size:16px;font-weight:600;">${u.user?.email_address || userId}</div>
+        <div style="font-size:12px;color:var(--text2);">User ID: ${userId}</div>
+      </div>
+    </div>
+    <div class="metrics" style="margin-bottom:20px;">
+      <div class="metric"><div class="metric-label">Period cost</div><div class="metric-value">${cost ? "$"+cost : "—"}</div></div>
+      <div class="metric"><div class="metric-label">Messages</div><div class="metric-value">${cm.message_count || 0}</div></div>
+      <div class="metric"><div class="metric-label">Conversations</div><div class="metric-value">${cm.distinct_conversation_count || 0}</div></div>
+      <div class="metric"><div class="metric-label">Web searches</div><div class="metric-value">${u.web_search_count || 0}</div></div>
+      ${spendRec ? `<div class="metric"><div class="metric-label">Spend limit</div><div class="metric-value">${spendRec.amount === null ? "∞" : "$"+(parseInt(spendRec.amount)/100).toFixed(0)}</div><div class="metric-sub">per month</div></div>` : ""}
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Claude.ai activity</div>
+        <div class="stat-row"><span class="stat-label">Projects created</span><span>${cm.distinct_projects_created_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Projects used</span><span>${cm.distinct_projects_used_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Files uploaded</span><span>${cm.distinct_files_uploaded_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Artifacts created</span><span>${cm.distinct_artifacts_created_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Extended thinking msgs</span><span>${cm.thinking_message_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Connectors invoked</span><span>${cm.connectors_used_count || 0}</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Claude Code activity</div>
+        <div class="stat-row"><span class="stat-label">Sessions</span><span>${cc.distinct_session_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Commits</span><span>${cc.commit_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Pull requests</span><span>${cc.pull_request_count || 0}</span></div>
+        <div class="stat-row"><span class="stat-label">Lines added</span><span>${(cc.lines_of_code?.added_count || 0).toLocaleString()}</span></div>
+        <div class="stat-row"><span class="stat-label">Lines removed</span><span>${(cc.lines_of_code?.removed_count || 0).toLocaleString()}</span></div>
+      </div>
+    </div>
+    ${cowork.distinct_session_count ? `
+    <div class="card">
+      <div class="card-title">Cowork activity</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;">
+        ${[["Sessions",cowork.distinct_session_count],["Messages",cowork.message_count],["Tool actions",cowork.action_count],["Dispatch turns",cowork.dispatch_turn_count],["Skills used",cowork.skills_used_count]].map(([l,v])=>`<div class="metric"><div class="metric-label">${l}</div><div class="metric-value" style="font-size:18px;">${v||0}</div></div>`).join("")}
+      </div>
+    </div>` : ""}
+  `;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DEPARTMENTS
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadDeptData() {
+  deptGroups = [];
+  deptMemberMap = {};
+
+  try {
+    // Get orgs, then groups per org
+    const orgsRes = await apiFetch("/api/compliance/organizations");
+    const orgs = orgsRes.data || [];
+
+    for (const org of orgs) {
+      try {
+        const grpRes = await apiFetch(`/api/compliance/organizations/${org.uuid}/groups`);
+        const groups = (grpRes.data || []).filter(g =>
+          (g.display_name || g.name || "").startsWith("#dept-")
+        );
+        for (const g of groups) {
+          deptGroups.push({ ...g, org_name: org.name });
+          // Load members
+          try {
+            const memRes = await fetchAll(
+              `/api/compliance/organizations/${org.uuid}/groups/${g.id}/members`
+            );
+            deptMemberMap[g.id] = new Set(memRes.map(m => m.user_id || m.id));
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.warn("dept data:", e.message);
+  }
+}
+
+function renderDepts() {
+  if (!deptGroups.length) {
+    document.getElementById("dept-metrics").innerHTML = "";
+    document.getElementById("dept-bars").innerHTML =
+      `<div class="state-wrap"><span>No #dept- groups found. Check compliance org_data scope and that groups are provisioned.</span></div>`;
+    document.getElementById("dept-tbody").innerHTML = "";
+    return;
+  }
+
+  const costMap = {};
+  allCosts.forEach(c => { costMap[c.user_id || c.user?.id] = parseFloat(c.amount || 0) / 100; });
+
+  // Build per-dept aggregates
+  const deptStats = deptGroups.map((g, i) => {
+    const memberIds = deptMemberMap[g.id] || new Set();
+    let totalCost = 0, totalMessages = 0, totalConvos = 0, totalCodeSessions = 0;
+    memberIds.forEach(uid => {
+      totalCost += costMap[uid] || 0;
+      const u = allUsers.find(x => x.user?.id === uid);
+      if (u) {
+        totalMessages += u.chat_metrics?.message_count || 0;
+        totalConvos += u.chat_metrics?.distinct_conversation_count || 0;
+        totalCodeSessions += u.claude_code_metrics?.core_metrics?.distinct_session_count || 0;
+      }
+    });
+    return {
+      name: g.display_name || g.name,
+      members: memberIds.size,
+      cost: totalCost, messages: totalMessages,
+      convos: totalConvos, codeSessions: totalCodeSessions,
+      color: PALETTE[i % PALETTE.length],
+    };
+  }).sort((a, b) => b.cost - a.cost);
+
+  const totalCost = deptStats.reduce((s, d) => s + d.cost, 0);
+  const totalMembers = deptStats.reduce((s, d) => s + d.members, 0);
+  const maxCost = Math.max(...deptStats.map(d => d.cost), 1);
+
+  document.getElementById("dept-metrics").innerHTML = `
+    <div class="metric"><div class="metric-label">#dept- groups</div><div class="metric-value">${deptGroups.length}</div></div>
+    <div class="metric"><div class="metric-label">Members tracked</div><div class="metric-value">${totalMembers}</div></div>
+    <div class="metric"><div class="metric-label">Total cost</div><div class="metric-value">$${totalCost.toFixed(0)}</div><div class="metric-sub">period</div></div>
+    <div class="metric"><div class="metric-label">Cost / member</div><div class="metric-value">$${totalMembers ? (totalCost/totalMembers).toFixed(0) : "—"}</div></div>
+  `;
+
+  document.getElementById("dept-bars").innerHTML = deptStats.map(d => `
+    <div class="gauge-row">
+      <div class="gauge-label">${d.name}</div>
+      <div class="gauge-track"><div class="gauge-fill" style="width:${Math.round(d.cost/maxCost*100)}%;background:${d.color};"></div></div>
+      <div class="gauge-val">$${d.cost.toFixed(0)}</div>
+    </div>`).join("");
+
+  document.getElementById("dept-tbody").innerHTML = deptStats.map((d, i) => `
+    <tr>
+      <td style="padding-left:20px;"><span class="badge" style="background:${d.color}22;color:${d.color};border:1px solid ${d.color}44;">${d.name}</span></td>
+      <td>${d.members}</td>
+      <td><strong>$${d.cost.toFixed(2)}</strong></td>
+      <td>${d.messages.toLocaleString()}</td>
+      <td>${d.convos.toLocaleString()}</td>
+      <td>${d.codeSessions.toLocaleString()}</td>
+    </tr>`).join("");
+
+  destroyChart("dept");
+  charts.dept = new Chart(document.getElementById("deptChart"), {
+    type: "doughnut",
+    data: {
+      labels: deptStats.map(d => d.name.replace("#dept-","")),
+      datasets: [{ data: deptStats.map(d => d.members), backgroundColor: deptStats.map(d => d.color), borderWidth: 3, borderColor: "var(--bg)" }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } } },
+      cutout: "55%"
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACTIVITY FEED
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadActivity() {
+  if (currentTab !== "activity") return;
+  loading("activity-wrap", "Fetching activity feed…");
+  document.getElementById("activity-count").textContent = "";
+
+  const type = document.getElementById("activity-type-sel").value;
+  const params = {
+    "created_at.gte": isoDate(getDays() + 3),
+    "created_at.lt": isoDate(3),
+    limit: 100,
+  };
+  if (type) params["activity_types[]"] = type;
+
+  try {
+    const res = await apiFetch("/api/compliance/activities", params);
+    const activities = res.data || [];
+    document.getElementById("activity-count").textContent = `${activities.length} events${res.has_more ? "+" : ""}`;
+    renderActivityTable(activities);
+  } catch (e) {
+    showError("activity-wrap", e.message);
+  }
+}
+
+function renderActivityTable(activities) {
+  if (!activities.length) {
+    document.getElementById("activity-wrap").innerHTML =
+      `<div class="state-wrap"><span>No activity in this window.</span></div>`;
+    return;
+  }
+  document.getElementById("activity-wrap").innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table>
+        <thead><tr><th>Time</th><th>User</th><th>Event type</th><th>IP</th></tr></thead>
+        <tbody>${activities.map(a => {
+          const actor = a.actor || {};
+          const ts = new Date(a.created_at).toLocaleString();
+          const type = (a.type || "").replace(/_/g, " ");
+          return `<tr>
+            <td style="font-size:11px;white-space:nowrap;color:var(--text2);">${ts}</td>
+            <td style="font-size:12px;">${actor.email_address || actor.type || "—"}</td>
+            <td><span class="badge badge-blue" style="font-size:10px;">${type}</span></td>
+            <td style="font-size:11px;color:var(--text3);">${actor.ip_address || "—"}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SPEND LIMITS
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadSpendLimits() {
+  try {
+    allSpend = await fetchAll("/api/spend_limits/effective", { limit: 1000 }, "data");
+  } catch (e) { allSpend = []; console.warn("spend_limits:", e.message); }
+}
+
+let filteredSpend = [];
+
+function filterSpend() {
+  const q = document.getElementById("spend-search").value.toLowerCase();
+  filteredSpend = allSpend.filter(s => {
+    const uid = s.scope?.user_id || "";
+    const u = allUsers.find(x => x.user?.id === uid);
+    return (u?.user?.email_address || uid).toLowerCase().includes(q);
+  });
+  renderSpendTable();
+}
+
+function renderSpendTable() {
+  if (!allSpend.length) {
+    document.getElementById("spending-wrap").innerHTML =
+      `<div class="state-wrap"><span>No spend limit data. Requires read:spend_limits scope on an Admin API key.</span></div>`;
+    document.getElementById("spending-metrics").innerHTML = "";
+    return;
+  }
+
+  if (!filteredSpend.length && !document.getElementById("spend-search").value) {
+    filteredSpend = [...allSpend].filter(s => s.scope?.type === "user");
+  }
+
+  const totalBudget = allSpend
+    .filter(s => s.scope?.type === "user" && s.amount !== null)
+    .reduce((t, s) => t + parseInt(s.amount || 0), 0) / 100;
+  const totalSpent = allSpend
+    .filter(s => s.scope?.type === "user")
+    .reduce((t, s) => t + parseFloat(s.period_to_date_spend || 0), 0) / 100;
+  const pendingCount = allSpend.filter(s => s.source?.type === "organization").length;
+
+  document.getElementById("spending-metrics").innerHTML = `
+    <div class="metric"><div class="metric-label">Members with limits</div><div class="metric-value">${allSpend.filter(s=>s.scope?.type==="user"&&s.amount!==null).length}</div></div>
+    <div class="metric"><div class="metric-label">Total budget</div><div class="metric-value">$${totalBudget.toFixed(0)}</div><div class="metric-sub">per month</div></div>
+    <div class="metric"><div class="metric-label">Period-to-date spend</div><div class="metric-value">$${totalSpent.toFixed(0)}</div></div>
+    <div class="metric"><div class="metric-label">Org-default members</div><div class="metric-value">${pendingCount}</div><div class="metric-sub">inheriting org limit</div></div>
+  `;
+
+  const userRows = filteredSpend.filter(s => s.scope?.type === "user");
+  if (!userRows.length) {
+    document.getElementById("spending-wrap").innerHTML =
+      `<div class="state-wrap"><span>No per-user spend rows match the filter.</span></div>`;
+    return;
+  }
+
+  document.getElementById("spending-wrap").innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table>
+        <thead><tr>
+          <th>Member</th>
+          <th>Monthly limit</th>
+          <th>Period-to-date</th>
+          <th>Usage</th>
+          <th>Limit source</th>
+        </tr></thead>
+        <tbody>${userRows.sort((a,b)=>parseFloat(b.period_to_date_spend||0)-parseFloat(a.period_to_date_spend||0)).map(s => {
+          const uid = s.scope?.user_id;
+          const u = allUsers.find(x => x.user?.id === uid);
+          const email = u?.user?.email_address || uid || "Unknown";
+          const limit = s.amount === null ? null : parseInt(s.amount) / 100;
+          const spent = parseFloat(s.period_to_date_spend || 0) / 100;
+          const pct = limit ? Math.min(Math.round(spent / limit * 100), 100) : 0;
+          const barColor = pct > 85 ? "#D85A30" : pct > 60 ? "#BA7517" : "#1D9E75";
+          const source = s.source?.type?.replace(/_/g, " ") || "—";
+          return `<tr>
+            <td style="font-size:12px;">${email}</td>
+            <td>${limit === null ? '<span style="color:var(--text3);">Unlimited</span>' : "$" + limit.toFixed(0)}</td>
+            <td><strong>$${spent.toFixed(2)}</strong></td>
+            <td style="min-width:120px;">
+              <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">${limit ? pct+"%" : "—"}</div>
+              ${limit ? `<div class="progress-wrap"><div class="progress-fill" style="width:${pct}%;background:${barColor};"></div></div>` : ""}
+            </td>
+            <td><span class="badge badge-gray" style="background:var(--bg2);color:var(--text2);font-size:10px;">${source}</span></td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LIMIT INCREASE REQUESTS
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadLimitRequests() {
+  if (currentTab !== "requests") return;
+  loading("requests-wrap", "Loading limit requests…");
+
+  const status = document.getElementById("req-status-sel").value;
+  const params = { limit: 100 };
+  if (status) params["status[]"] = status;
+
+  try {
+    const res = await apiFetch("/api/spend_limit_requests", params);
+    renderRequests(res.data || []);
+  } catch (e) {
+    showError("requests-wrap", e.message);
+  }
+}
+
+function renderRequests(requests) {
+  if (!requests.length) {
+    document.getElementById("requests-wrap").innerHTML =
+      `<div class="state-wrap"><span>No requests found for this status.</span></div>`;
+    return;
+  }
+  document.getElementById("requests-wrap").innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table>
+        <thead><tr><th>Member</th><th>Submitted</th><th>Status</th><th>Current limit</th><th>Period-to-date</th></tr></thead>
+        <tbody>${requests.map(r => {
+          const actor = r.actor || {};
+          const ts = new Date(r.created_at).toLocaleDateString();
+          const ss = r.spend_summary;
+          const limit = ss?.amount === null ? "Unlimited" : ss?.amount != null ? "$"+(parseInt(ss.amount)/100).toFixed(0) : "—";
+          const spent = ss?.period_to_date_spend != null ? "$"+(parseFloat(ss.period_to_date_spend)/100).toFixed(2) : "—";
+          return `<tr>
+            <td>
+              <div style="font-weight:500;font-size:13px;">${actor.name || actor.email_address || "—"}</div>
+              <div style="font-size:11px;color:var(--text3);">${actor.email_address || ""}</div>
+            </td>
+            <td style="font-size:12px;">${ts}</td>
+            <td><span class="badge badge-${r.status}">${r.status}</span></td>
+            <td style="font-size:12px;">${limit}</td>
+            <td style="font-size:12px;">${spent}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════════════════════════════
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════════════════
+if (PROXY) {
+  document.getElementById("config-panel").style.display = "none";
+  refreshAll();
+}
+</script>
+</body>
+</html>
