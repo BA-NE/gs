@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Analytics Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f9f8f6;
+    --surface: #ffffff;
+    --surface2: #f3f2ee;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.15);
+    --text: #1a1a18;
+    --text2: #6b6b67;
+    --text3: #9a9a96;
+    --accent: #3266ad;
+    --accent-light: #e6f1fb;
+    --success: #1d9e75;
+    --success-light: #e1f5ee;
+    --warning: #ba7517;
+    --warning-light: #faeeda;
+    --danger: #d85a30;
+    --danger-light: #faece7;
+    --purple: #534ab7;
+    --purple-light: #eeedfe;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18;
+      --surface: #242422;
+      --surface2: #2c2c2a;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.15);
+      --text: #e8e7e3;
+      --text2: #a0a09c;
+      --text3: #6b6b67;
+      --accent-light: #0c447c;
+      --success-light: #085041;
+      --warning-light: #633806;
+      --danger-light: #712b13;
+      --purple-light: #3c3489;
+    }
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+  .header { background: var(--surface); border-bottom: 0.5px solid var(--border2); padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+  .header h1 { font-size: 16px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+  .header-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+  .header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .api-key-input { border: 0.5px solid var(--border2); background: var(--surface2); color: var(--text); padding: 6px 10px; border-radius: var(--radius-sm); font-size: 13px; width: 280px; outline: none; }
+  .api-key-input:focus { border-color: var(--accent); }
+  .btn { border: 0.5px solid var(--border2); background: var(--surface); color: var(--text); padding: 6px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background 0.15s; }
+  .btn:hover { background: var(--surface2); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #185fa5; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .layout { display: flex; height: calc(100vh - 56px); }
+  .sidebar { width: 200px; background: var(--surface); border-right: 0.5px solid var(--border); padding: 12px; flex-shrink: 0; overflow-y: auto; }
+  .nav-section { font-size: 11px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 12px 8px 6px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text2); font-size: 13px; transition: all 0.1s; border: none; background: none; width: 100%; text-align: left; }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--accent-light); color: var(--accent); font-weight: 500; }
+  .nav-item i { font-size: 15px; }
+  .main { flex: 1; overflow-y: auto; padding: 24px; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .page-title { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .page-subtitle { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .metric-card { background: var(--surface2); border-radius: var(--radius-sm); padding: 14px 16px; }
+  .metric-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+  .metric-value { font-size: 22px; font-weight: 500; line-height: 1; }
+  .metric-sub { font-size: 12px; color: var(--text3); margin-top: 4px; }
+  .metric-trend-up { color: var(--success); }
+  .metric-trend-down { color: var(--danger); }
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px; }
+  .card-title { font-size: 14px; font-weight: 500; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .card-title i { color: var(--text2); }
+  .chart-wrap { position: relative; width: 100%; height: 260px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 0.5px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 0.5px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 500; }
+  .badge-green { background: var(--success-light); color: var(--success); }
+  .badge-blue { background: var(--accent-light); color: var(--accent); }
+  .badge-amber { background: var(--warning-light); color: var(--warning); }
+  .badge-red { background: var(--danger-light); color: var(--danger); }
+  .badge-purple { background: var(--purple-light); color: var(--purple); }
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; color: var(--text2); gap: 8px; }
+  .empty-state i { font-size: 32px; color: var(--text3); }
+  .empty-state p { font-size: 13px; text-align: center; max-width: 280px; line-height: 1.5; }
+  .loading { display: flex; align-items: center; gap: 8px; color: var(--text2); font-size: 13px; padding: 16px; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-msg { background: var(--danger-light); color: var(--danger); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .date-row { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .date-row label { font-size: 13px; color: var(--text2); }
+  .date-row input[type=date] { border: 0.5px solid var(--border2); background: var(--surface); color: var(--text); padding: 5px 8px; border-radius: var(--radius-sm); font-size: 13px; outline: none; }
+  .progress-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+  .progress-fill.warning { background: var(--warning); }
+  .progress-fill.danger { background: var(--danger); }
+  .scope-tag { font-size: 11px; background: var(--surface2); color: var(--text2); border-radius: 4px; padding: 2px 6px; font-family: monospace; }
+  .limit-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .limit-label { font-size: 13px; font-weight: 500; }
+  .limit-sub { font-size: 12px; color: var(--text2); }
+  .limit-value { font-size: 13px; font-weight: 500; text-align: right; }
+  .section-sep { height: 0.5px; background: var(--border); margin: 16px 0; }
+  .user-row:hover { background: var(--surface2); }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 100px; background: var(--surface2); color: var(--text2); }
+  .welcome { max-width: 480px; margin: 60px auto; text-align: center; }
+  .welcome i { font-size: 40px; color: var(--text3); margin-bottom: 16px; }
+  .welcome h2 { font-size: 18px; font-weight: 500; margin-bottom: 8px; }
+  .welcome p { font-size: 14px; color: var(--text2); line-height: 1.6; margin-bottom: 24px; }
+  .scope-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; font-size: 12px; color: var(--text2); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-dot"></div>
+  <h1><i class="ti ti-chart-dots" aria-hidden="true"></i> Claude Analytics</h1>
+  <div class="header-actions">
+    <input type="password" class="api-key-input" id="apiKeyInput" placeholder="Paste your API key…" autocomplete="off">
+    <button class="btn btn-primary" id="loadBtn" onclick="loadAll()">
+      <i class="ti ti-refresh" aria-hidden="true"></i> Load data
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar" role="navigation" aria-label="Dashboard sections">
+    <div class="nav-section">Analytics</div>
+    <button class="nav-item active" onclick="showPage('overview', this)"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Overview</button>
+    <button class="nav-item" onclick="showPage('engagement', this)"><i class="ti ti-users" aria-hidden="true"></i> Engagement</button>
+    <button class="nav-item" onclick="showPage('projects', this)"><i class="ti ti-folder" aria-hidden="true"></i> Projects</button>
+    <button class="nav-item" onclick="showPage('connectors', this)"><i class="ti ti-plug" aria-hidden="true"></i> Connectors</button>
+    <div class="nav-section">Spend</div>
+    <button class="nav-item" onclick="showPage('spend', this)"><i class="ti ti-currency-dollar" aria-hidden="true"></i> Spend limits</button>
+    <div class="nav-section">Compliance</div>
+    <button class="nav-item" onclick="showPage('activity', this)"><i class="ti ti-activity" aria-hidden="true"></i> Activity feed</button>
+    <button class="nav-item" onclick="showPage('orgdata', this)"><i class="ti ti-building" aria-hidden="true"></i> Org & users</button>
+    <button class="nav-item" onclick="showPage('settings', this)"><i class="ti ti-settings" aria-hidden="true"></i> Org settings</button>
+  </nav>
+
+  <main class="main" id="mainContent">
+
+    <!-- OVERVIEW -->
+    <section class="page active" id="page-overview">
+      <div id="overview-welcome" class="welcome">
+        <i class="ti ti-chart-dots" aria-hidden="true"></i>
+        <h2>Claude Analytics Dashboard</h2>
+        <p>Enter your API key above and click <strong>Load data</strong> to populate all sections. Your key is used only in this browser session and never stored.</p>
+        <div class="scope-list">
+          <span class="scope-tag">read:analytics</span>
+          <span class="scope-tag">read:compliance_activities</span>
+          <span class="scope-tag">read:compliance_org_data</span>
+          <span class="scope-tag">read:compliance_org_settings</span>
+          <span class="scope-tag">read:compliance_user_data</span>
+          <span class="scope-tag">read:spend_limits</span>
+        </div>
+      </div>
+      <div id="overview-content" style="display:none">
+        <div class="page-title">Overview</div>
+        <div class="page-subtitle" id="overview-refresh"></div>
+        <div class="metrics-grid" id="overview-metrics"></div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title"><i class="ti ti-trending-up" aria-hidden="true"></i> Daily active users (30 days)</div>
+            <div class="legend-row" id="dau-legend"></div>
+            <div class="chart-wrap"><canvas id="dauChart" role="img" aria-label="Daily active users over the past 30 days"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><i class="ti ti-users-group" aria-hidden="true"></i> Seat utilization</div>
+            <div class="chart-wrap"><canvas id="seatChart" role="img" aria-label="Seat utilization donut chart"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ENGAGEMENT -->
+    <section class="page" id="page-engagement">
+      <div class="page-title">User engagement</div>
+      <div class="page-subtitle">Per-user activity metrics. <span class="scope-tag">read:analytics</span></div>
+      <div class="date-row">
+        <label>Date</label>
+        <input type="date" id="engDate" value="">
+        <button class="btn" onclick="loadEngagement()"><i class="ti ti-refresh" aria-hidden="true"></i> Refresh</button>
+      </div>
+      <div id="engagement-content">
+        <div class="empty-state"><i class="ti ti-users" aria-hidden="true"></i><p>Load data to see per-user engagement metrics.</p></div>
+      </div>
+    </section>
+
+    <!-- PROJECTS -->
+    <section class="page" id="page-projects">
+      <div class="page-title">Chat projects</div>
+      <div class="page-subtitle">Project usage by unique users and conversations. <span class="scope-tag">read:analytics</span></div>
+      <div class="date-row">
+        <label>Date</label>
+        <input type="date" id="projDate" value="">
+        <button class="btn" onclick="loadProjects()"><i class="ti ti-refresh" aria-hidden="true"></i> Refresh</button>
+      </div>
+      <div id="projects-content">
+        <div class="empty-state"><i class="ti ti-folder" aria-hidden="true"></i><p>Load data to see project usage.</p></div>
+      </div>
+    </section>
+
+    <!-- CONNECTORS -->
+    <section class="page" id="page-connectors">
+      <div class="page-title">Connectors</div>
+      <div class="page-subtitle">MCP connector usage across your organization. <span class="scope-tag">read:analytics</span></div>
+      <div class="date-row">
+        <label>Date</label>
+        <input type="date" id="connDate" value="">
+        <button class="btn" onclick="loadConnectors()"><i class="ti ti-refresh" aria-hidden="true"></i> Refresh</button>
+      </div>
+      <div id="connectors-content">
+        <div class="empty-state"><i class="ti ti-plug" aria-hidden="true"></i><p>Load data to see connector usage.</p></div>
+      </div>
+    </section>
+
+    <!-- SPEND LIMITS -->
+    <section class="page" id="page-spend">
+      <div class="page-title">Spend limits</div>
+      <div class="page-subtitle">Monthly spend caps and current utilization. <span class="scope-tag">read:spend_limits</span></div>
+      <div id="spend-content">
+        <div class="empty-state"><i class="ti ti-currency-dollar" aria-hidden="true"></i><p>Load data to see spend limits.</p></div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY FEED -->
+    <section class="page" id="page-activity">
+      <div class="page-title">Activity feed</div>
+      <div class="page-subtitle">Real-time compliance audit events. <span class="scope-tag">read:compliance_activities</span></div>
+      <div class="date-row">
+        <label>Limit</label>
+        <select id="activityLimit" style="border:0.5px solid var(--border2);background:var(--surface);color:var(--text);padding:5px 8px;border-radius:var(--radius-sm);font-size:13px;">
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        <button class="btn" onclick="loadActivity()"><i class="ti ti-refresh" aria-hidden="true"></i> Refresh</button>
+      </div>
+      <div id="activity-content">
+        <div class="empty-state"><i class="ti ti-activity" aria-hidden="true"></i><p>Load data to see the compliance activity feed.</p></div>
+      </div>
+    </section>
+
+    <!-- ORG & USERS -->
+    <section class="page" id="page-orgdata">
+      <div class="page-title">Organizations & users</div>
+      <div class="page-subtitle">Directory data across linked organizations. <span class="scope-tag">read:compliance_org_data</span> <span class="scope-tag">read:compliance_user_data</span></div>
+      <div id="orgdata-content">
+        <div class="empty-state"><i class="ti ti-building" aria-hidden="true"></i><p>Load data to see organization and user directory.</p></div>
+      </div>
+    </section>
+
+    <!-- ORG SETTINGS -->
+    <section class="page" id="page-settings">
+      <div class="page-title">Organization settings</div>
+      <div class="page-subtitle">Compliance and governance settings for your organization. <span class="scope-tag">read:compliance_org_settings</span></div>
+      <div id="settings-content">
+        <div class="empty-state"><i class="ti ti-settings" aria-hidden="true"></i><p>Load data to see organization settings.</p></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+const BASE = 'https://api.anthropic.com';
+const BASE_ANALYTICS = BASE + '/v1/organizations/analytics';
+const BASE_COMPLIANCE = BASE + '/v1/compliance';
+let apiKey = '';
+let charts = {};
+
+function getKey() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  return apiKey;
+}
+
+function ymd(d) { return d.toISOString().split('T')[0]; }
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d; }
+
+function setDefaultDates() {
+  const d3 = ymd(daysAgo(3));
+  ['engDate','projDate','connDate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = d3;
+  });
+}
+
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+async function apiFetch(url, isCompliance) {
+  const key = getKey();
+  if (!key) throw new Error('No API key provided.');
+  const headers = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
+  if (isCompliance) {
+    delete headers['anthropic-version'];
+  }
+  const r = await fetch(url, { headers });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    let msg = `HTTP ${r.status}`;
+    try { msg += ': ' + JSON.parse(text)?.error?.message || text; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+function loading(id) {
+  document.getElementById(id).innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+}
+
+function errMsg(id, msg) {
+  document.getElementById(id).innerHTML = `<div class="error-msg"><i class="ti ti-alert-circle" aria-hidden="true"></i> ${escHtml(msg)}</div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmt(n) { return (n ?? 0).toLocaleString(); }
+function fmtDollar(n) { return '$' + Number(n ?? 0).toFixed(2); }
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+async function loadAll() {
+  if (!getKey()) { alert('Please enter your API key first.'); return; }
+  setDefaultDates();
+  document.getElementById('overview-welcome').style.display = 'none';
+  document.getElementById('overview-content').style.display = 'block';
+  await Promise.allSettled([
+    loadSummaries(),
+    loadSpend(),
+    loadActivity(),
+    loadOrgData(),
+    loadOrgSettings(),
+    loadEngagement(),
+    loadProjects(),
+    loadConnectors()
+  ]);
+}
+
+async function loadSummaries() {
+  const end = ymd(daysAgo(3));
+  const start = ymd(daysAgo(34));
+  loading('overview-metrics');
+  destroyChart('dauChart'); destroyChart('seatChart');
+  try {
+    const data = await apiFetch(`${BASE_ANALYTICS}/summaries?starting_date=${start}&ending_date=${end}`);
+    const days = (data.data || []).reverse();
+    const latest = days[days.length - 1] || {};
+    document.getElementById('overview-refresh').textContent = `Data through ${end} (3-day delay) · ${days.length} days loaded`;
+    const metricsEl = document.getElementById('overview-metrics');
+    metricsEl.innerHTML = `
+      <div class="metric-card"><div class="metric-label"><i class="ti ti-user-check" style="font-size:13px" aria-hidden="true"></i> DAU</div><div class="metric-value">${fmt(latest.daily_active_user_count)}</div><div class="metric-sub">as of ${latest.starting_date || end}</div></div>
+      <div class="metric-card"><div class="metric-label"><i class="ti ti-users" style="font-size:13px" aria-hidden="true"></i> WAU</div><div class="metric-value">${fmt(latest.weekly_active_user_count)}</div><div class="metric-sub">7-day rolling</div></div>
+      <div class="metric-card"><div class="metric-label"><i class="ti ti-users-group" style="font-size:13px" aria-hidden="true"></i> MAU</div><div class="metric-value">${fmt(latest.monthly_active_user_count)}</div><div class="metric-sub">30-day rolling</div></div>
+      <div class="metric-card"><div class="metric-label"><i class="ti ti-id-badge" style="font-size:13px" aria-hidden="true"></i> Seats</div><div class="metric-value">${fmt(latest.assigned_seat_count)}</div><div class="metric-sub">${fmt(latest.pending_invite_count)} pending</div></div>
+      <div class="metric-card"><div class="metric-label"><i class="ti ti-terminal" style="font-size:13px" aria-hidden="true"></i> Cowork DAU</div><div class="metric-value">${fmt(latest.cowork_daily_active_user_count)}</div><div class="metric-sub">daily Cowork users</div></div>
+      <div class="metric-card"><div class="metric-label"><i class="ti ti-calendar-stats" style="font-size:13px" aria-hidden="true"></i> Cowork MAU</div><div class="metric-value">${fmt(latest.cowork_monthly_active_user_count)}</div><div class="metric-sub">30-day Cowork</div></div>
+    `;
+    const labels = days.map(d => d.starting_date ? d.starting_date.slice(5) : '');
+    const dauData = days.map(d => d.daily_active_user_count || 0);
+    const wauData = days.map(d => d.weekly_active_user_count || 0);
+    document.getElementById('dau-legend').innerHTML = `
+      <div class="legend-item"><div class="legend-swatch" style="background:#3266ad"></div>DAU</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#1d9e75;border-style:dashed;border-width:1px"></div>WAU</div>
+    `;
+    charts['dauChart'] = new Chart(document.getElementById('dauChart'), {
+      type: 'line',
+      data: { labels, datasets: [
+        { label: 'DAU', data: dauData, borderColor: '#3266ad', backgroundColor: 'rgba(50,102,173,0.08)', tension: 0.3, fill: true, pointRadius: 2 },
+        { label: 'WAU', data: wauData, borderColor: '#1d9e75', borderDash: [4,3], tension: 0.3, fill: false, pointRadius: 0 }
+      ]},
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 8, font: { size: 11 } } }, y: { beginAtZero: true, ticks: { font: { size: 11 } } } } }
+    });
+    const seated = latest.assigned_seat_count || 0;
+    const active = latest.monthly_active_user_count || 0;
+    const inactive = Math.max(0, seated - active);
+    charts['seatChart'] = new Chart(document.getElementById('seatChart'), {
+      type: 'doughnut',
+      data: { labels: ['Active (MAU)', 'Inactive'], datasets: [{ data: [active, inactive], backgroundColor: ['#3266ad', '#d3d1c7'], borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 12 } } }, cutout: '65%' }
+    });
+  } catch(e) { errMsg('overview-metrics', e.message); }
+}
+
+async function loadEngagement() {
+  const date = document.getElementById('engDate').value || ymd(daysAgo(3));
+  loading('engagement-content');
+  try {
+    const data = await apiFetch(`${BASE_ANALYTICS}/users?date=${date}&limit=50`);
+    const users = data.data || [];
+    if (!users.length) { document.getElementById('engagement-content').innerHTML = '<div class="empty-state"><i class="ti ti-mood-empty" aria-hidden="true"></i><p>No user activity data for this date.</p></div>'; return; }
+    const rows = users.map(u => {
+      const cm = u.chat_metrics || {};
+      const cc = u.claude_code_metrics?.core_metrics || {};
+      const cw = u.cowork_metrics || {};
+      return `<tr class="user-row">
+        <td style="font-weight:500">${escHtml(u.user?.email_address || u.user?.id || '—')}</td>
+        <td>${fmt(cm.message_count)}</td>
+        <td>${fmt(cm.distinct_conversation_count)}</td>
+        <td>${fmt(cm.distinct_artifacts_created_count)}</td>
+        <td>${fmt(cc.distinct_session_count)}</td>
+        <td>${fmt(cc.lines_of_code?.added_count)}</td>
+        <td>${fmt(cc.commit_count)}</td>
+        <td>${fmt(cw.distinct_session_count)}</td>
+        <td>${fmt(u.web_search_count)}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('engagement-content').innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>User</th><th>Messages</th><th>Conversations</th><th>Artifacts</th>
+            <th>CC sessions</th><th>Lines added</th><th>Commits</th><th>Cowork sessions</th><th>Web searches</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>
+      </div>
+      ${data.next_page ? `<div style="font-size:12px;color:var(--text2);padding:8px">Showing first ${users.length} users. More available.</div>` : ''}
+    `;
+  } catch(e) { errMsg('engagement-content', e.message); }
+}
+
+async function loadProjects() {
+  const date = document.getElementById('projDate').value || ymd(daysAgo(3));
+  loading('projects-content');
+  try {
+    const data = await apiFetch(`${BASE_ANALYTICS}/apps/chat/projects?date=${date}&limit=100`);
+    const projects = data.data || [];
+    if (!projects.length) { document.getElementById('projects-content').innerHTML = '<div class="empty-state"><i class="ti ti-folder-off" aria-hidden="true"></i><p>No project activity for this date.</p></div>'; return; }
+    const rows = projects.map(p => `<tr>
+      <td style="font-weight:500">${escHtml(p.project_name || p.project_id || '—')}</td>
+      <td>${fmt(p.unique_user_count)}</td>
+      <td>${fmt(p.conversation_count)}</td>
+      <td>${fmtDollar(p.cost_usd)}</td>
+    </tr>`).join('');
+    document.getElementById('projects-content').innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden">
+        <table><thead><tr><th>Project</th><th>Unique users</th><th>Conversations</th><th>Cost (USD)</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>`;
+  } catch(e) { errMsg('projects-content', e.message); }
+}
+
+async function loadConnectors() {
+  const date = document.getElementById('connDate').value || ymd(daysAgo(3));
+  loading('connectors-content');
+  try {
+    const data = await apiFetch(`${BASE_ANALYTICS}/connectors?date=${date}&limit=100`);
+    const conns = data.data || [];
+    if (!conns.length) { document.getElementById('connectors-content').innerHTML = '<div class="empty-state"><i class="ti ti-plug-off" aria-hidden="true"></i><p>No connector usage for this date.</p></div>'; return; }
+    const rows = conns.map(c => `<tr>
+      <td style="font-weight:500">${escHtml(c.connector_name || c.connector_id || '—')}</td>
+      <td>${fmt(c.unique_user_count)}</td>
+      <td>${fmt(c.invocation_count)}</td>
+    </tr>`).join('');
+    document.getElementById('connectors-content').innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden">
+        <table><thead><tr><th>Connector</th><th>Unique users</th><th>Invocations</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>`;
+  } catch(e) { errMsg('connectors-content', e.message); }
+}
+
+async function loadSpend() {
+  loading('spend-content');
+  try {
+    const data = await apiFetch(`${BASE}/v1/organizations/spend_limits`);
+    const limits = data.data || data.spend_limits || (Array.isArray(data) ? data : [data]);
+    if (!limits.length) { document.getElementById('spend-content').innerHTML = '<div class="empty-state"><i class="ti ti-currency-dollar" aria-hidden="true"></i><p>No spend limit data returned.</p></div>'; return; }
+    const cards = limits.map(lim => {
+      const used = lim.current_spend_usd ?? lim.used ?? 0;
+      const cap = lim.spend_limit_usd ?? lim.limit ?? lim.cap ?? 0;
+      const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+      const cls = pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : '';
+      return `<div class="card">
+        <div class="card-title"><i class="ti ti-currency-dollar" aria-hidden="true"></i> ${escHtml(lim.workspace_name || lim.name || lim.id || 'Organization')}</div>
+        <div class="limit-row">
+          <div><div class="limit-label">${fmtDollar(used)} / ${fmtDollar(cap)}</div><div class="limit-sub">${pct}% of monthly spend limit</div></div>
+          <div class="limit-value"><span class="badge ${pct >= 90 ? 'badge-red' : pct >= 70 ? 'badge-amber' : 'badge-green'}">${pct}%</span></div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill ${cls}" style="width:${pct}%"></div></div>
+        ${lim.period ? `<div style="font-size:12px;color:var(--text2);margin-top:8px">Period: ${escHtml(lim.period)}</div>` : ''}
+      </div>`;
+    }).join('');
+    document.getElementById('spend-content').innerHTML = cards;
+  } catch(e) {
+    document.getElementById('spend-content').innerHTML = `
+      <div class="error-msg"><i class="ti ti-alert-circle" aria-hidden="true"></i> ${escHtml(e.message)}</div>
+      <div class="card"><div class="card-title"><i class="ti ti-info-circle" aria-hidden="true"></i> About spend limits</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.6">Spend limits cap monthly API spending per organization and workspace. They are configured in the Claude Console. If this endpoint returns an error, your key type may not have spend limit visibility — Admin API keys may be required for this endpoint.</p></div>`;
+  }
+}
+
+async function loadActivity() {
+  const limit = document.getElementById('activityLimit')?.value || 20;
+  loading('activity-content');
+  try {
+    const data = await apiFetch(`${BASE_COMPLIANCE}/activities?limit=${limit}`, true);
+    const events = data.data || [];
+    if (!events.length) { document.getElementById('activity-content').innerHTML = '<div class="empty-state"><i class="ti ti-mood-empty" aria-hidden="true"></i><p>No activity events found.</p></div>'; return; }
+    const typeColors = {
+      'claude_chat_created': 'badge-blue', 'claude_chat_deleted': 'badge-red',
+      'user_login': 'badge-green', 'user_logout': 'badge-amber',
+      'file_uploaded': 'badge-purple', 'file_deleted': 'badge-red',
+    };
+    const rows = events.map(ev => {
+      const tc = typeColors[ev.type] || 'badge-blue';
+      const actor = ev.actor?.email_address || ev.actor?.user_id || ev.actor?.type || '—';
+      const ts = ev.created_at ? new Date(ev.created_at).toLocaleString() : '—';
+      return `<tr>
+        <td style="color:var(--text2);font-size:12px;white-space:nowrap">${escHtml(ts)}</td>
+        <td><span class="badge ${tc}">${escHtml(ev.type || '—')}</span></td>
+        <td>${escHtml(actor)}</td>
+        <td style="color:var(--text2);font-size:12px">${escHtml(ev.actor?.ip_address || '—')}</td>
+        <td style="color:var(--text2);font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis">${escHtml(ev.claude_chat_id || ev.claude_project_id || ev.id || '—')}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('activity-content').innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+        <table><thead><tr><th>Time</th><th>Event type</th><th>Actor</th><th>IP</th><th>Resource ID</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        </div>
+      </div>
+      ${data.has_more ? `<div style="font-size:12px;color:var(--text2);padding:8px">More events available (has_more = true).</div>` : ''}
+    `;
+  } catch(e) { errMsg('activity-content', e.message); }
+}
+
+async function loadOrgData() {
+  loading('orgdata-content');
+  try {
+    const orgsData = await apiFetch(`${BASE_COMPLIANCE}/organizations`, true);
+    const orgs = orgsData.data || [];
+    if (!orgs.length) { document.getElementById('orgdata-content').innerHTML = '<div class="empty-state"><i class="ti ti-building-off" aria-hidden="true"></i><p>No organizations found.</p></div>'; return; }
+    let html = `<div class="metrics-grid" style="margin-bottom:20px">
+      <div class="metric-card"><div class="metric-label">Organizations</div><div class="metric-value">${fmt(orgs.length)}</div></div>
+    </div>`;
+    for (const org of orgs.slice(0, 5)) {
+      let usersHtml = '';
+      try {
+        const usersData = await apiFetch(`${BASE_COMPLIANCE}/organizations/${org.uuid}/users?limit=20`, true);
+        const users = usersData.data || [];
+        usersHtml = users.map(u => `<tr>
+          <td style="font-weight:500">${escHtml(u.email_address || u.id || '—')}</td>
+          <td>${escHtml(u.display_name || '—')}</td>
+          <td><span class="pill">${escHtml(u.role || '—')}</span></td>
+          <td style="color:var(--text2);font-size:12px">${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+        </tr>`).join('');
+        if (usersData.next_page) usersHtml += `<tr><td colspan="4" style="font-size:12px;color:var(--text2)">+ more users</td></tr>`;
+      } catch {}
+      html += `<div class="card">
+        <div class="card-title"><i class="ti ti-building" aria-hidden="true"></i> ${escHtml(org.name || org.uuid)}</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">UUID: <code style="font-size:11px">${escHtml(org.uuid)}</code> · Created: ${org.created_at ? new Date(org.created_at).toLocaleDateString() : '—'}</div>
+        ${usersHtml ? `<div class="section-sep"></div><div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px">Members</div>
+        <div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Joined</th></tr></thead><tbody>${usersHtml}</tbody></table></div>` : ''}
+      </div>`;
+    }
+    if (orgs.length > 5) html += `<div style="font-size:12px;color:var(--text2);padding:8px">Showing 5 of ${orgs.length} organizations.</div>`;
+    document.getElementById('orgdata-content').innerHTML = html;
+  } catch(e) { errMsg('orgdata-content', e.message); }
+}
+
+async function loadOrgSettings() {
+  loading('settings-content');
+  try {
+    const data = await apiFetch(`${BASE_COMPLIANCE}/org_settings`, true);
+    const settings = data.data || data.settings || data;
+    const rows = Object.entries(settings).filter(([k]) => k !== 'object').map(([k, v]) => {
+      let badge = '';
+      if (v === true) badge = '<span class="badge badge-green">enabled</span>';
+      else if (v === false) badge = '<span class="badge badge-amber">disabled</span>';
+      else badge = `<span style="font-size:13px">${escHtml(String(v))}</span>`;
+      return `<tr><td style="font-weight:500;font-size:13px">${escHtml(k.replace(/_/g,' '))}</td><td>${badge}</td></tr>`;
+    }).join('');
+    document.getElementById('settings-content').innerHTML = rows
+      ? `<div class="card" style="padding:0;overflow:hidden"><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<div class="empty-state"><i class="ti ti-settings-off" aria-hidden="true"></i><p>No settings data returned by API.</p></div>';
+  } catch(e) {
+    document.getElementById('settings-content').innerHTML = `
+      <div class="error-msg"><i class="ti ti-alert-circle" aria-hidden="true"></i> ${escHtml(e.message)}</div>
+      <div class="card"><p style="font-size:13px;color:var(--text2);line-height:1.6">Organization settings include compliance configuration, data retention policies, and governance options for your Claude Enterprise organization.</p></div>`;
+  }
+}
+
+setDefaultDates();
+</script>
+</body>
+</html>
