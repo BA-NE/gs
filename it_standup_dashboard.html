@@ -488,7 +488,7 @@ function parseHires(rows) {
     const name = String(r[iN]||"").trim(); if (!name) return null;
     return {
       name,
-      conf:       /^confidential$/i.test(String(r[iCf]||"").trim()),
+      conf:       /^conf/i.test(String(r[iCf]||"").trim()),
       location:   iL>-1    ? String(r[iL]||"").trim()    : "",
       department: iDept>-1 ? String(r[iDept]||"").trim() : "",
       date:       iD>-1    ? String(r[iD]||"").trim()    : "",
@@ -520,7 +520,7 @@ function parseTerms(rows) {
     const name = String(r[iN]||"").trim(); if (!name) return null;
     return {
       name,
-      conf:     /^confidential$/i.test(String(r[iCf]||"").trim()),
+      conf:     /^conf/i.test(String(r[iCf]||"").trim()),
       location: iL>-1  ? String(r[iL]||"").trim()  : "",
       date:     iD>-1  ? String(r[iD]||"").trim()  : "",
       owner:    iO>-1  ? String(r[iO]||"").trim()  : "",
@@ -590,6 +590,7 @@ async function refreshAll() {
     const sheet = names[0];
     const inv = parseInventory(await gRange(INV_DRIVE, INV_ITEM, sheet));
     stockData = inv.stockByLoc; orderData = inv.onOrderByLoc;
+    stockOverrides = {}; // reset manual edits on fresh load
     renderStockTable();
     document.getElementById("stk-badge").className="slbl live";
     document.getElementById("stk-badge").textContent="● live";
@@ -620,15 +621,62 @@ function render() {
   renderHires(); renderTerms(); renderMapDots();
 }
 
+// ── DATE PARSER for sorting (handles "7th July 26", "22nd June 26" etc.)
+const MONTHS = {january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11,
+  jan:0,feb:1,mar:2,apr:3,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+
+function parseDate(str) {
+  if (!str) return null;
+  // Strip ordinal suffixes: 1st 2nd 3rd 4th etc.
+  const clean = str.toLowerCase().replace(/(\d+)(st|nd|rd|th)/g, "$1").trim();
+  const parts = clean.split(/[\s,]+/);
+  let day=null, month=null, year=null;
+  parts.forEach(p => {
+    const n = parseInt(p);
+    if (!isNaN(n)) {
+      if (n > 31) year = 2000 + n;
+      else if (day === null) day = n;
+    } else if (MONTHS[p] !== undefined) {
+      month = MONTHS[p];
+    }
+  });
+  if (day !== null && month !== null) {
+    return new Date(year ?? 2026, month, day);
+  }
+  return null;
+}
+
 function sortData(arr, col, dir) {
   if (!col) return arr;
   return [...arr].sort((a,b) => {
     let av=a[col], bv=b[col];
-    if (typeof av==="boolean") av=av?0:1;
-    if (typeof bv==="boolean") bv=bv?0:1;
+    // Boolean sort
+    if (typeof av==="boolean") { av=av?0:1; bv=bv?0:1; return (av-bv)*dir; }
+    // Date columns
+    if (col==="date") {
+      const da=parseDate(String(av||"")), db=parseDate(String(bv||""));
+      if (da && db) return (da-db)*dir;
+      if (da) return -dir;
+      if (db) return dir;
+    }
+    // Default string sort
     av=String(av||"").toLowerCase(); bv=String(bv||"").toLowerCase();
     return av<bv?-dir : av>bv?dir : 0;
   });
+}
+
+// ── STOCK OVERRIDES (live edits that survive re-sort)
+let stockOverrides = {}; // { "Newport Beach": { newPc:0, usedPc:0, newMac:0, usedMac:0, pcOrder:0, macOrder:0 } }
+
+function adjustStock(loc, field, delta) {
+  if (!stockOverrides[loc]) {
+    // Seed from current stockData/orderData
+    const s = stockData.find(x=>x.loc===loc) || {newPc:0,usedPc:0,newMac:0,usedMac:0};
+    const o = orderData.find(x=>x.loc===loc) || {pc:0,mac:0};
+    stockOverrides[loc] = { newPc:s.newPc, usedPc:s.usedPc, newMac:s.newMac, usedMac:s.usedMac, pcOrder:o.pc, macOrder:o.mac };
+  }
+  stockOverrides[loc][field] = Math.max(0, (stockOverrides[loc][field]||0) + delta);
+  renderStockTable();
 }
 
 function updateSortHeaders(tbl, sortState) {
@@ -689,7 +737,16 @@ function renderStockTable() {
   let rows = [...locs].map(loc => {
     const s = stockData.find(x=>x.loc===loc) || {newPc:0,usedPc:0,newMac:0,usedMac:0};
     const o = orderData.find(x=>x.loc===loc) || {pc:0,mac:0};
-    return { loc, newPc:s.newPc, usedPc:s.usedPc, newMac:s.newMac, usedMac:s.usedMac, pcOrder:o.pc, macOrder:o.mac };
+    const ov = stockOverrides[loc];
+    return {
+      loc,
+      newPc:   ov ? ov.newPc   : s.newPc,
+      usedPc:  ov ? ov.usedPc  : s.usedPc,
+      newMac:  ov ? ov.newMac  : s.newMac,
+      usedMac: ov ? ov.usedMac : s.usedMac,
+      pcOrder: ov ? ov.pcOrder : o.pc,
+      macOrder:ov ? ov.macOrder: o.mac,
+    };
   });
   if (sSort.col) rows = rows.slice().sort((a,b) => {
     const av=a[sSort.col], bv=b[sSort.col];
@@ -697,14 +754,24 @@ function renderStockTable() {
     return String(av).localeCompare(String(bv))*sSort.dir;
   });
   updateSortHeaders("s", sSort);
+
+  const cell = (loc, field, val, color) => `
+    <td>
+      <div style="display:flex;align-items:center;gap:5px">
+        <button onclick="adjustStock('${loc}','${field}',-1)" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border2);background:var(--s2);color:var(--muted);font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700">−</button>
+        <span style="font-weight:700;color:${color};min-width:18px;text-align:center">${val}</span>
+        <button onclick="adjustStock('${loc}','${field}',1)" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border2);background:var(--s2);color:var(--muted);font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700">+</button>
+      </div>
+    </td>`;
+
   tb.innerHTML = rows.map(r=>`<tr>
     <td style="font-weight:700">${r.loc}</td>
-    <td style="font-weight:700;color:var(--teal)">${r.newPc}</td>
-    <td style="font-weight:700;color:${r.usedPc>0?"var(--teal)":"var(--muted2)"}">${r.usedPc}</td>
-    <td style="font-weight:700;color:${r.pcOrder>0?"var(--teal)":"var(--muted2)"}">${r.pcOrder}</td>
-    <td style="font-weight:700;color:var(--blue)">${r.newMac}</td>
-    <td style="font-weight:700;color:${r.usedMac>0?"var(--blue)":"var(--muted2)"}">${r.usedMac}</td>
-    <td style="font-weight:700;color:${r.macOrder>0?"var(--blue)":"var(--muted2)"}">${r.macOrder}</td>
+    ${cell(r.loc,'newPc',  r.newPc,  'var(--teal)')}
+    ${cell(r.loc,'usedPc', r.usedPc, r.usedPc>0?'var(--teal)':'var(--muted2)')}
+    ${cell(r.loc,'pcOrder',r.pcOrder,r.pcOrder>0?'var(--teal)':'var(--muted2)')}
+    ${cell(r.loc,'newMac', r.newMac, 'var(--blue)')}
+    ${cell(r.loc,'usedMac',r.usedMac,r.usedMac>0?'var(--blue)':'var(--muted2)')}
+    ${cell(r.loc,'macOrder',r.macOrder,r.macOrder>0?'var(--blue)':'var(--muted2)')}
   </tr>`).join("");
 }
 
