@@ -718,7 +718,7 @@ async function syncStockToSharePoint() {
       ].filter(([ci]) => ci > -1);
       for (const [ci, val] of patches) {
         const addr = `${colLetter(ci)}${excelRow}`;
-        await fetch(
+        const patchRes = await fetch(
           `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/worksheets('${encodeURIComponent(names[0])}')/range(address='${addr}')`,
           {
             method: "PATCH",
@@ -726,6 +726,11 @@ async function syncStockToSharePoint() {
             body: JSON.stringify({ values: [[val]] })
           }
         );
+        if (!patchRes.ok) {
+          const err = await patchRes.text();
+          throw new Error(`PATCH failed for ${addr}: ${patchRes.status} ${err}`);
+        }
+        console.log(`✓ Patched ${loc} ${addr} = ${val}`);
       }
     }
     // Success — clear overrides and refresh
@@ -735,6 +740,8 @@ async function syncStockToSharePoint() {
     btn.textContent = "↑ Save to SharePoint";
     document.getElementById("stk-badge").textContent = "● saved";
     document.getElementById("stk-time").textContent = new Date().toLocaleTimeString();
+    // Wait for Excel to finish processing before reloading
+    await new Promise(r => setTimeout(r, 2000));
     // Reload from SharePoint to confirm
     const inv = parseInventory(await gRange(INV_DRIVE, INV_ITEM, names[0]));
     stockData = inv.stockByLoc; orderData = inv.onOrderByLoc;
