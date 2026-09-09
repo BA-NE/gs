@@ -689,9 +689,33 @@ async function syncStockToSharePoint() {
   try {
     const tok = await getToken();
     const names = await gSheets(INV_DRIVE, INV_ITEM);
-    const sheet = names[0];
+    const sheetName = names[0];
+
+    // Create a workbook session (non-persistent = auto-closes, avoids lock)
+    const sessionRes = await fetch(
+      `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/createSession`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ persistChanges: true })
+      }
+    );
+    if (!sessionRes.ok) throw new Error(`Session create failed: ${sessionRes.status} ${await sessionRes.text()}`);
+    const { id: sessionId } = await sessionRes.json();
+
+    const headers = {
+      Authorization: `Bearer ${tok}`,
+      "Content-Type": "application/json",
+      "workbook-session-id": sessionId
+    };
+
     // Read current range to find row/col positions
-    const rows = await gRange(INV_DRIVE, INV_ITEM, sheet);
+    const rangeRes = await fetch(
+      `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`,
+      { headers }
+    );
+    const rows = (await rangeRes.json()).values || [];
+
     // Find header row
     let hi = -1;
     for (let i=0; i<rows.length; i++) {
@@ -699,6 +723,7 @@ async function syncStockToSharePoint() {
       if (r.findIndex(c=>c==="new windows in stock"||c==="new windows") > -1) { hi=i; break; }
     }
     if (hi === -1) throw new Error("Could not find header row in inventory sheet");
+
     const H = rows[hi].map(c=>String(c).toLowerCase().trim());
     const nwi = H.findIndex(c=>c==="new windows in stock"||c==="new windows");
     const uwi = H.findIndex(c=>c==="used windows in stock"||c==="used windows");
@@ -707,45 +732,47 @@ async function syncStockToSharePoint() {
     const woi = H.findIndex(c=>c==="windows on order");
     const moi = H.findIndex(c=>c==="macs on order");
     const colLetter = i => String.fromCharCode(65+i);
+
     // Patch each overridden row
     for (const [loc, ov] of Object.entries(stockOverrides)) {
       const rowIdx = rows.findIndex((r,i) => i>hi && String(r[0]||"").trim()===loc);
-      if (rowIdx === -1) continue;
-      const excelRow = rowIdx + 1; // Excel is 1-indexed
+      if (rowIdx === -1) { console.warn(`Row not found for ${loc}`); continue; }
+      const excelRow = rowIdx + 1;
       const patches = [
         [nwi, ov.newPc], [uwi, ov.usedPc], [nmi, ov.newMac],
         [umi, ov.usedMac], [woi, ov.pcOrder], [moi, ov.macOrder]
       ].filter(([ci]) => ci > -1);
+
       for (const [ci, val] of patches) {
         const addr = `${colLetter(ci)}${excelRow}`;
         const patchRes = await fetch(
-          `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/worksheets('${encodeURIComponent(names[0])}')/range(address='${addr}')`,
-          {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ values: [[val]] })
-          }
+          `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/worksheets('${encodeURIComponent(sheetName)}')/range(address='${addr}')`,
+          { method: "PATCH", headers, body: JSON.stringify({ values: [[val]] }) }
         );
-        if (!patchRes.ok) {
-          const err = await patchRes.text();
-          throw new Error(`PATCH failed for ${addr}: ${patchRes.status} ${err}`);
-        }
+        if (!patchRes.ok) throw new Error(`PATCH failed for ${addr}: ${patchRes.status} ${await patchRes.text()}`);
         console.log(`✓ Patched ${loc} ${addr} = ${val}`);
       }
     }
-    // Success — clear overrides and refresh
+
+    // Close session
+    await fetch(
+      `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/closeSession`,
+      { method: "POST", headers }
+    );
+
+    // Success
     stockOverrides = {};
     btn.style.display = "none";
     btn.style.opacity = "1";
     btn.textContent = "↑ Save to SharePoint";
     document.getElementById("stk-badge").textContent = "● saved";
     document.getElementById("stk-time").textContent = new Date().toLocaleTimeString();
-    // Wait for Excel to finish processing before reloading
+
     await new Promise(r => setTimeout(r, 2000));
-    // Reload from SharePoint to confirm
-    const inv = parseInventory(await gRange(INV_DRIVE, INV_ITEM, names[0]));
+    const inv = parseInventory(await gRange(INV_DRIVE, INV_ITEM, sheetName));
     stockData = inv.stockByLoc; orderData = inv.onOrderByLoc;
     renderStockTable();
+
   } catch(e) {
     console.error("Sync failed:", e);
     btn.textContent = "↑ Save to SharePoint";
