@@ -254,6 +254,7 @@ tbody td{padding:8px 10px;vertical-align:middle;white-space:nowrap}
     <div class="card-hd">
       <div class="card-title"><span class="ind" style="background:var(--blue);box-shadow:0 0 5px var(--blue)"></span>Laptop stock</div>
       <div style="display:flex;align-items:center;gap:8px">
+        <button id="stk-sync-btn" onclick="syncStockToSharePoint()" style="display:none;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:4px 10px;border-radius:6px;border:1px solid var(--green);background:var(--green-d);color:var(--green);cursor:pointer;text-transform:uppercase;letter-spacing:.06em">↑ Save to SharePoint</button>
         <span class="slbl live" id="stk-badge">● live</span>
         <span style="font-size:10px;color:var(--muted);font-weight:600" id="stk-time">—</span>
         <span style="font-size:10px;color:var(--muted2);font-weight:600" id="stk-cd"></span>
@@ -340,7 +341,7 @@ async function initMsal() {
 
 initMap();
 initMsal();
-const SCOPES = ["https://graph.microsoft.com/Sites.Read.All"];
+const SCOPES = ["https://graph.microsoft.com/Sites.Read.All", "https://graph.microsoft.com/Files.ReadWrite"];
 
 // ═══════════════════════════════════════════
 // GRAPH FILE IDs
@@ -357,6 +358,7 @@ const REFRESH_SEC = 300; // 5 minutes
 const CITIES = {
   "remote us":     {lon:-98.58,  lat:39.83,  label:"US Remote"},
   "remote uk":     {lon:-0.12,   lat:51.51,  label:"London"},
+  "sofia":         {lon:23.32,  lat:42.70,  label:"Sofia"},
   "bulgaria":      {lon:25.49,  lat:42.73,  label:"Bulgaria"},
   "new york":      {lon:-74.00, lat:40.71,  label:"New York"},
   "newport beach": {lon:-117.93,lat:33.62,  label:"Newport Beach"},
@@ -378,8 +380,9 @@ const CITIES = {
 };
 const ck = s => {
   const k = (s||"").toLowerCase().trim();
-  if (k.includes("us") && k.includes("remote")) return "remote us";
-  if (k.includes("uk") && k.includes("remote")) return "remote uk";
+  // Match "remote us", "us remote", "remote-us" etc. using word boundaries
+  if (/\bus\b/.test(k) && /\bremote\b/.test(k)) return "remote us";
+  if (/\buk\b/.test(k) && /\bremote\b/.test(k)) return "remote uk";
   return k;
 };
 
@@ -670,13 +673,78 @@ let stockOverrides = {}; // { "Newport Beach": { newPc:0, usedPc:0, newMac:0, us
 
 function adjustStock(loc, field, delta) {
   if (!stockOverrides[loc]) {
-    // Seed from current stockData/orderData
     const s = stockData.find(x=>x.loc===loc) || {newPc:0,usedPc:0,newMac:0,usedMac:0};
     const o = orderData.find(x=>x.loc===loc) || {pc:0,mac:0};
     stockOverrides[loc] = { newPc:s.newPc, usedPc:s.usedPc, newMac:s.newMac, usedMac:s.usedMac, pcOrder:o.pc, macOrder:o.mac };
   }
   stockOverrides[loc][field] = Math.max(0, (stockOverrides[loc][field]||0) + delta);
+  document.getElementById("stk-sync-btn").style.display = "inline-block";
   renderStockTable();
+}
+
+async function syncStockToSharePoint() {
+  const btn = document.getElementById("stk-sync-btn");
+  btn.textContent = "Saving…";
+  btn.style.opacity = "0.6";
+  try {
+    const tok = await getToken();
+    const names = await gSheets(INV_DRIVE, INV_ITEM);
+    const sheet = names[0];
+    // Read current range to find row/col positions
+    const rows = await gRange(INV_DRIVE, INV_ITEM, sheet);
+    // Find header row
+    let hi = -1;
+    for (let i=0; i<rows.length; i++) {
+      const r = rows[i].map(c=>String(c).toLowerCase().trim());
+      if (r.findIndex(c=>c==="new windows in stock"||c==="new windows") > -1) { hi=i; break; }
+    }
+    if (hi === -1) throw new Error("Could not find header row in inventory sheet");
+    const H = rows[hi].map(c=>String(c).toLowerCase().trim());
+    const nwi = H.findIndex(c=>c==="new windows in stock"||c==="new windows");
+    const uwi = H.findIndex(c=>c==="used windows in stock"||c==="used windows");
+    const nmi = H.findIndex(c=>c==="new mac in stock"||c==="new mac");
+    const umi = H.findIndex(c=>c==="used mac in stock"||c==="used mac");
+    const woi = H.findIndex(c=>c==="windows on order");
+    const moi = H.findIndex(c=>c==="macs on order");
+    const colLetter = i => String.fromCharCode(65+i);
+    // Patch each overridden row
+    for (const [loc, ov] of Object.entries(stockOverrides)) {
+      const rowIdx = rows.findIndex((r,i) => i>hi && String(r[0]||"").trim()===loc);
+      if (rowIdx === -1) continue;
+      const excelRow = rowIdx + 1; // Excel is 1-indexed
+      const patches = [
+        [nwi, ov.newPc], [uwi, ov.usedPc], [nmi, ov.newMac],
+        [umi, ov.usedMac], [woi, ov.pcOrder], [moi, ov.macOrder]
+      ].filter(([ci]) => ci > -1);
+      for (const [ci, val] of patches) {
+        const addr = `${colLetter(ci)}${excelRow}`;
+        await fetch(
+          `https://graph.microsoft.com/v1.0/drives/${INV_DRIVE}/items/${INV_ITEM}/workbook/worksheets('${encodeURIComponent(names[0])}')/range(address='${addr}')`,
+          {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ values: [[val]] })
+          }
+        );
+      }
+    }
+    // Success — clear overrides and refresh
+    stockOverrides = {};
+    btn.style.display = "none";
+    btn.style.opacity = "1";
+    btn.textContent = "↑ Save to SharePoint";
+    document.getElementById("stk-badge").textContent = "● saved";
+    document.getElementById("stk-time").textContent = new Date().toLocaleTimeString();
+    // Reload from SharePoint to confirm
+    const inv = parseInventory(await gRange(INV_DRIVE, INV_ITEM, names[0]));
+    stockData = inv.stockByLoc; orderData = inv.onOrderByLoc;
+    renderStockTable();
+  } catch(e) {
+    console.error("Sync failed:", e);
+    btn.textContent = "↑ Save to SharePoint";
+    btn.style.opacity = "1";
+    alert("Save failed: " + e.message);
+  }
 }
 
 function updateSortHeaders(tbl, sortState) {
